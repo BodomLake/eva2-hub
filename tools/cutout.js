@@ -1,10 +1,15 @@
 /*!
  * tools/cutout.js — 白底立绘 → 透明底立绘（零依赖，纯 Node）
  * ------------------------------------------------------------------
- *   node tools/cutout.js                     # 处理 config.boot.art 里引用的那几张图
- *   node tools/cutout.js asuka_stand.png …   # 只处理指定的图（名字 = src/assets 里的文件名）
+ *   node tools/cutout.js                     # 处理 config.boot.art 引用的那几张图 + src/assets/gear/ 里的挡位图
+ *   node tools/cutout.js asuka_stand.png …   # 只处理指定的图（名字 = src/assets 或 src/assets/gear 里的文件名）
  *   选项：--out=src/assets/art  --src=src/assets  --seed=232  --floor=190
  *          --tol=14  --sat=30  --pad=0  --keep（不裁透明边）  --dry（只报告，不写文件）
+ *
+ * 两个来源目录（产物都写进 src/assets/art/，运行时只扫这一个目录）：
+ *   src/assets/       立绘 / 徽记原图 → 产物同名（asuka_stand.png → art/asuka_stand.png）
+ *   src/assets/gear/  中央六边形的挡位图（A/C/E/F）→ 产物加 gear- 前缀、字母小写
+ *                     （A.png → art/gear-a.png，config.vehicle.gearArt.map 里填的就是它）
  *
  * 为什么需要这一步：自检页背景是近黑的红黑渐变，而网上的立绘多半是
  * **白底不透明 PNG**（colorType=2，根本没有 alpha）—— 直接铺上去就是两块白板，
@@ -350,7 +355,7 @@ argv.forEach(function (a) {
   else { console.log('未知参数 --' + k); process.exit(1); }
 });
 
-/* 没点名 → 从 config 里取（.src 支持「文件名」/「./art/名字.png」/ URL） */
+/* 没点名 → 从 config 里取（.src 支持「文件名」/「./art/名字.png」/ URL）+ gear/ 里的挡位图 */
 function fromConfig() {
   const art = (C.boot && C.boot.art) || {};
   const out = [];
@@ -364,30 +369,60 @@ function fromConfig() {
   return out;
 }
 
-console.log('\nEVA-02 HUD · cutout（白底立绘 → 透明底立绘）\n');
+/* src/assets/gear/ 里的挡位图：放几张就抠几张（换图 = 丢进目录，不用改脚本） */
+const GEAR_DIR = 'src/assets/gear';
+function gearInDir() {
+  const dir = path.join(ROOT, GEAR_DIR);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(function (f) { return /\.png$/i.test(f); })
+    .map(function (f) { return path.join(GEAR_DIR, f); });
+}
 
-const targets = names.length ? names : fromConfig();
+/* 一个待处理项 → { file 源文件名, from 源路径, out 产物名 }；两处都找不到就返回 null。
+   挡位图（gear/ 目录）的产物加 gear- 前缀 + 字母小写，免得和自检页立绘混在一起。 */
+function jobOf(name) {
+  const base = path.basename(String(name));
+  const file = /\.png$/i.test(base) ? base : base + '.png';
+  const inArt = path.join(ROOT, o.src, file);
+  if (fs.existsSync(inArt)) return { file: file, from: inArt, out: file };
+  const inGear = path.join(ROOT, GEAR_DIR, file);
+  if (fs.existsSync(inGear)) return { file: file, from: inGear, out: 'gear-' + file.toLowerCase() };
+  return null;
+}
+
+/* 个别原图的背景「不够白」时在这里单独给参数（省得为了它一份文件改全局默认值）。
+   C.png 的背景是 180~235 的浅蓝灰：默认 seed=232 一颗种子都种不下去（抠掉 0.6%），
+   把种子 / 生长阈值放低才吃得动；线稿照样挡得住 —— 泛洪只从四条边的连通区生长。 */
+const FILE_TUNING = {
+  'c.png': { seed: 185, floor: 170, sat: 40 }
+};
+
+console.log('\nEVA-02 HUD · cutout（白底立绘 / 挡位图 → 透明底）\n');
+
+const list = names.length ? names : fromConfig().concat(gearInDir());
+const targets = [];
+list.forEach(function (n) {
+  const j = jobOf(n);
+  if (j) targets.push(j);
+  else console.log('  跳过 ' + path.basename(String(n)) + '：' + o.src + '/ 与 ' + GEAR_DIR + '/ 里都没有这个文件');
+});
 if (!targets.length) {
-  console.log('  没有可处理的图：config.boot.art.left/right.src 都是空的\n');
+  console.log('  没有可处理的图：config.boot.art.left/right.src 都是空的，' + GEAR_DIR + '/ 里也没有图\n');
   process.exit(0);
 }
 if (!o.dry) fs.mkdirSync(path.join(ROOT, o.out), { recursive: true });
 
 let done = 0;
-targets.forEach(function (name) {
-  const base = path.basename(name);
-  const file = /\.png$/i.test(base) ? base : base + '.png';
-  const from = path.join(ROOT, o.src, file);
-  if (!fs.existsSync(from)) {
-    console.log('  跳过 ' + file + '：' + o.src + '/ 里没有这个文件');
-    return;
-  }
+targets.forEach(function (job) {
+  const file = job.file;
   try {
     const t0 = Date.now();
-    const img = decodePNG(fs.readFileSync(from));
-    const res = cutWhite(img, o);
+    const img = decodePNG(fs.readFileSync(job.from));
+    /* 单文件微调（FILE_TUNING）叠在命令行参数之上 */
+    const res = cutWhite(img, Object.assign({}, o, FILE_TUNING[file.toLowerCase()] || {}));
     const png = encodePNG(res.w, res.h, res.rgba);
-    const to = path.join(ROOT, o.out, file);
+    const to = path.join(ROOT, o.out, job.out);
     if (!o.dry) fs.writeFileSync(to, png);
     done++;
     console.log('  ok   ' + file + '  ' + img.w + '×' + img.h + ' → ' + res.w + '×' + res.h +
@@ -410,5 +445,6 @@ targets.forEach(function (name) {
 if (done && !o.dry) {
   console.log('\n  下一步：config.boot.art.left/right.src（两侧立绘）与 config.boot.mark.src' +
     '\n  （环里六边形内部的徽记）填 art/ 里的文件名（如 \'asuka_stand.png\' / \'nerv2.png\'），' +
+    '\n  config.vehicle.gearArt.map 填挡位图（如 \'gear-a.png\'）；' +
     '\n  组件按名字从 src/assets/art/ 解析（src/core/artslot.js），换图只改这一行。\n');
 }

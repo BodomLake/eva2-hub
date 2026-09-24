@@ -11,9 +11,10 @@
  * 轮廓（base.css 的令牌，四角互为镜像）：
  *   左上 chip--tl 外圆角左上 + 右下切角，右上 chip--tr 外圆角右上 + 左下切角
  */
-import { CONFIG as C } from '../config.js';
 import { useHudContext } from '../composables/useHud.js';
 
+/* ⚠ 这里不再 import CONFIG：右上角徽标的第二行原来读 C.brand.dualMode（「×2」），
+   现在改成显示挡位代号（view.gearShort），本组件已不需要 config。 */
 const { view } = useHudContext();
 </script>
 
@@ -67,7 +68,7 @@ const { view } = useHudContext();
         <i class="chipbg chipbg--amber"></i>
 
         <span class="gearchip__box">
-          <b class="gearchip__code" id="v-gear-code">{{ view.gearShort }}</b>
+          <!-- <b class="gearchip__code" id="v-gear-code">{{ view.gearShort }}</b> -->
           <em class="gearchip__name" id="v-gear-name">{{ view.gearName }}</em>
         </span>
 
@@ -84,7 +85,7 @@ const { view } = useHudContext();
         </span>
 
         <span class="gearchip__dual">
-          <em id="v-dual">{{ C.brand.dualMode }}</em>
+          <b class="gearchip__code" id="v-gear-code">{{ view.gearShort }}</b>
         </span>
       </div>
     </div>
@@ -183,11 +184,15 @@ const { view } = useHudContext();
   filter: drop-shadow(0 0 11px rgba(255, 45, 61, .95));
 }
 
-/* ==================== 右上角：骑行挡位徽标（新国标 / ×2 模式） ==================== */
+/* ==================== 右上角：骑行挡位徽标（挡位名 + 挡位代号） ==================== */
 /*
- * 参考图里这是一整块芯片：左侧上下两块铭牌（当前挡位 + ×2 模式），
+ * 参考图里这是一整块芯片：左侧上下两块铭牌（当前挡位名 + 第二行），
  * 右侧一列「倒三角 + 4 个电量点」—— 三角与圆点都在框里，不再拆到外面。
  * 轮廓 chip--tr：右上圆角 + 左下切角（与左上的天气时间芯片镜像对称）。
+ *
+ * ⚠ 第二行原来是 config.brand.dualMode（一个「×2」，被当成双电模式）——
+ *   **那不是这块地方的意思**：它展现的是**当前骑行挡位**（A / E / C / F / P），
+ *   第一行挡位名（滑行模式…）+ 第二行代号（C）一起读。代号取自 view.gearShort。
  */
 .gearchip {
   position: relative;
@@ -214,10 +219,6 @@ const { view } = useHudContext();
   gap: 6px;
   min-width: 106px;
   padding: 3px 10px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, rgba(255, 233, 214, .14), rgba(255, 233, 214, .05));
-  border: 1px solid rgba(255, 214, 160, .5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);
 }
 
 .gearchip__code {
@@ -231,13 +232,14 @@ const { view } = useHudContext();
 }
 
 .gearchip__name {
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: .14em;
   color: #ffe9d6;
 }
 
-/* 第二行只写「×2」（参考图没有「模式」两个字） */
+/* 第二行 = 当前挡位代号（A / E / C / F / P）—— 用 .gearchip__code 的琥珀色大字，
+   和第一行的挡位名一起构成「挡位铭牌」；两边都不再是「×2 模式」 */
 .gearchip__dual {
   min-width: 62px;
   margin-left: 12px;
@@ -246,8 +248,8 @@ const { view } = useHudContext();
   color: var(--c-orange-2);
 }
 
-.gearchip__dual em {
-  font-weight: 700;
+.gearchip__dual .gearchip__code {
+  font-size: 20px;
 }
 
 /* 右侧：倒三角（指向下）+ 4 个电量点，整体在框内 */

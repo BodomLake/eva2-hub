@@ -3,28 +3,36 @@
  * LeftRail.vue — 左侧功能灯塔（5 个六边形芯片）
  * ------------------------------------------------------------------
  * 自上而下与参考图一致：消息 / 导航 / NERV / 音乐 / 设置。
+ * 五个芯片**都可以点**，点一下打开对应的应用页，再点一下关掉
+ * （键盘 i / n / j / t 同效，Esc 逐层退出；页面里还有页签可以横向切）。
+ *
  * 点亮条件：
- *   消息 → 存在告警（红闪 + 角标）   导航 → 行驶中（非 P 档）
- *   NERV → 上电常亮（核心心跳）      音乐 → 手机音源播放中
- *   设置 → 帮助浮层或操作弹框打开（点它可开操作弹框）
+ *   消息 → 存在告警（红闪）或消息中心有未读（角标 = 未读数）
+ *   导航 → 行驶中（非 P 档）
+ *   NERV → 上电常亮（核心心跳）
+ *   音乐 → 手机音源或本地播放器在放
+ *   设置 → 设置页打开 / 帮助浮层 / 操作弹框
  */
 import { CONFIG as C } from '../config.js';
 import { useHudContext } from '../composables/useHud.js';
 
-const { view, helpOpen, panelOpen } = useHudContext();
+const { view, helpOpen, panelOpen, page, openPage } = useHudContext();
 
 function chipCls(id) {
-  if (id === 'msg') return { 'is-alert': !!view.warning };
-  if (id === 'nav') return { 'is-on': !view.isPark };
-  if (id === 'nerv') return { 'is-core': true };        // 核心芯片：常亮呼吸
-  if (id === 'music') return { 'is-on': view.mediaPlaying };
-  if (id === 'set') return { 'is-on': helpOpen.value || panelOpen.value };
+  const open = page.value === id;
+  if (id === 'msg') return { 'is-alert': !!view.warning || view.msgUnread > 0, 'is-open': open };
+  if (id === 'nav') return { 'is-on': !view.isPark, 'is-open': open };
+  if (id === 'nerv') return { 'is-core': true, 'is-open': open };      // 核心芯片：常亮呼吸
+  if (id === 'music') return { 'is-on': view.mediaPlaying, 'is-open': open };
+  if (id === 'set') return { 'is-on': helpOpen.value || panelOpen.value, 'is-open': open };
   return {};
 }
 
-/* 设置芯片 = 操作弹框开关（面板里还有一整套演示按钮） */
-function onClick(id) {
-  if (id === 'set') panelOpen.value = !panelOpen.value;
+/* 未读角标：优先显示消息中心的未读数，没有未读但正在告警则显示 1 */
+function badgeOf(id) {
+  if (id !== 'msg') return 0;
+  if (view.msgUnread > 0) return Math.min(99, view.msgUnread);
+  return view.warning ? 1 : 0;
 }
 </script>
 
@@ -34,13 +42,13 @@ function onClick(id) {
       v-for="app in C.rail"
       :key="app.id"
       class="hexchip chip--hex"
-      :class="[chipCls(app.id), { 'is-click': app.id === 'set' }]"
-      :title="app.id === 'set' ? app.label + '（操作弹框 · 键盘 O）' : app.label"
-      @click="onClick(app.id)"
+      :class="[chipCls(app.id), 'is-click']"
+      :title="app.label + '（打开 / 关闭 · 键盘 ' + { msg: 'I', nav: 'N', nerv: '', music: 'J', set: 'T' }[app.id] + '）'"
+      @click="openPage(app.id)"
     >
       <i class="chipbg"></i>
       <svg class="ico"><use :href="'#' + app.icon" /></svg>
-      <b v-if="app.id === 'msg' && view.warning" class="hexchip__badge">1</b>
+      <b v-if="badgeOf(app.id)" class="hexchip__badge">{{ badgeOf(app.id) }}</b>
     </span>
   </aside>
 </template>
@@ -166,4 +174,19 @@ function onClick(id) {
 /* 「设置」芯片 = 操作弹框开关：只有它可点，所以给个手型 + 悬停辉光 */
 .hexchip.is-click { cursor: pointer; }
 .hexchip.is-click:hover { filter: drop-shadow(0 0 10px rgba(255, 122, 24, .85)); }
+
+/* 当前打开的那一页：芯片描一圈琥珀（和 is-on 的点亮色区分开，
+   所以「导航芯片亮着」和「导航页正开着」不会看混） */
+.hexchip.is-open .chipbg {
+  background: linear-gradient(180deg, #ffe08a 0%, #ff8a1e 55%, #c8131f 100%);
+}
+
+.hexchip.is-open .chipbg::after {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 192, 46, .85);
+  background: linear-gradient(180deg, rgba(46, 18, 4, .94), rgba(16, 5, 2, .96));
+}
+
+.hexchip.is-open .ico {
+  filter: drop-shadow(0 0 7px rgba(255, 192, 46, .9));
+}
 </style>

@@ -8,6 +8,7 @@
  * 纯 ESM：浏览器（Vite）与 Node（tools/smoke.js）都能直接 import。
  */
 import { CONFIG as C, clamp, lerp, copy } from '../config.js';
+import { createTire, tickTire, tireAlerts } from './tire.js';
 
 const V = C.vehicle;
 const TH = C.thermal;
@@ -21,7 +22,7 @@ const TH = C.thermal;
       powered: true,
 
       /* 行驶 */
-      gear: s.gear,              // P（驻车） | A / E / C / F / X1 / X2
+      gear: s.gear,              // P（驻车） | A / E / C / F（X1 / X2 暂停用）
       gearLast: s.gearLast,      // 驻车时保留上一次的骑行挡位（物理模型不乱跳）
       speed: 0,                  // km/h
       throttle: 0,               // -1 ~ 1
@@ -42,6 +43,19 @@ const TH = C.thermal;
       /* 温度 */
       motorTemp: s.motorTemp,
       ambient: s.ambient,
+
+      /* 胎压胎温（前后轮；阈值来自用户设置，useHud 同步进来） */
+      tire: createTire(C.apps.tire),
+      tireOn: true,                                          // 设置页的「胎压胎温监控」总开关
+      tireLimits: {
+        front: copy(C.apps.tire.limits),
+        rear: copy(C.apps.tire.limits)
+      },
+      tireDemo: { leak: false, heat: false, drop: false },
+
+      /* 感应开关（坐垫 / 边撑）与「人坐上去没有」 */
+      sensors: { seat: true, kickstand: true },
+      seatOn: true,
 
       /* 天气（左上角芯片第一行；demo 里每隔一段时间轮换） */
       weather: C.weather.current,
@@ -65,6 +79,7 @@ const TH = C.thermal;
       /* 告警 */
       warning: null,
       forceWarn: null,           // 操作台（ControlPanel）强制指定一条告警 id；null = 不强制
+      pushWarn: null,            // 远程推送（天气骤变…）指定的告警 id；走同一张 config.warnings 表
 
       /* 演示驾驶 */
       auto: {
@@ -88,11 +103,40 @@ const TH = C.thermal;
   /* 当前挡位的参数（车速上限 / 加速 / 功率上限 / 续航系数） */
   function gearDef(v) { return V.gears[rideGear(v)] || V.gears[V.gearOrder[0]]; }
 
+  /* 「在烧氮气」的功率阈值：氮气条消耗与侧边光带变紫都用它（一个来源，别各写一份） */
+  function burnWatt(v) {
+    var g = gearDef(v);
+    return (g && g.powerCap ? g.powerCap : 0) * C.strip.burnRatio;
+  }
+
+/* ============================ 侧边氛围灯带 ============================ */
+  /*
+   * 氛围灯带的状态机（App.vue 两条 .strip 的类名来源）。
+   * 返回值 = 状态 id，渲染层拼成 `is-<id>`；颜色 / 闪烁在 base.css。
+   * 优先级从上到下，前一条成立就压过后面的：
+   *   fault 红色闪烁 → 有红色级告警（故障）：安全信息 > 一切驾驶状态
+   *   boost 紫色闪烁 → 正在烧氮气
+   *   accel 蓝色常亮 → 加速中
+   *   brake 绿色常亮 → 减速 / 能量回收
+   *   park  黄色      → 驻车 / 未上电 / 充电中
+   *   idle  淡青      → 其余（静止或匀速巡航）
+   */
+  function stripMode(v) {
+    var S = C.strip;
+    var w = v.warning;
+    if (w && w.level === 'red') return 'fault';
+    if (v.power > burnWatt(v)) return 'boost';
+    if (v.throttle > S.accelThr && v.power > S.minWatt) return 'accel';
+    if (v.throttle < S.brakeThr || v.power < -20) return 'brake';
+    if (!v.powered || v.charger || v.gear === V.parkGear) return 'park';
+    return 'idle';
+  }
+
   function shiftGear(v, g) {
     if (!v.powered || g === v.gear) return false;
     var moving = g !== V.parkGear;
     if (moving && V.gearOrder.indexOf(g) < 0) return false;
-    if (moving && v.kickstand) { v.moveTry = v.t; v.moveWhy = 'KICKSTAND'; return false; }
+    if (moving && v.kickstand && v.sensors.kickstand !== false) { v.moveTry = v.t; v.moveWhy = 'KICKSTAND'; return false; }
     if (moving && v.charger) { v.moveTry = v.t; v.moveWhy = 'CHARGER'; return false; }
     if (moving && v.lamps.lock) { v.moveTry = v.t; v.moveWhy = 'LOCKED'; return false; }
     if (!moving && Math.abs(v.speed) > 1.5) return false;      // 必须停稳才能挂 P
@@ -138,6 +182,15 @@ const TH = C.thermal;
     if (cmd.autoFlip) v.auto.enabled = !v.auto.enabled;
     /* 操作台：强制指定一条告警（'LOW_SOC' … / null 清除）—— 走的是同一套告警表 */
     if (cmd.forceWarn !== undefined) v.forceWarn = cmd.forceWarn || null;
+    /* 远程推送 / 消息中心：指定一条告警（同表；与 forceWarn 分开，互不覆盖） */
+    if (cmd.pushWarn !== undefined) v.pushWarn = cmd.pushWarn || null;
+    /* 感应开关（设置页）：{ seat: true, kickstand: false } 这种部分更新 */
+    if (cmd.sensors) {
+      for (var sk in cmd.sensors) {
+        if (Object.prototype.hasOwnProperty.call(cmd.sensors, sk)) v.sensors[sk] = !!cmd.sensors[sk];
+      }
+    }
+    if (cmd.seatOn !== undefined) v.seatOn = !!cmd.seatOn;
     if (cmd.mediaFlip) v.media.playing = !v.media.playing;
     if (cmd.toggleLamp) {
       var k = cmd.toggleLamp;
@@ -194,6 +247,10 @@ const TH = C.thermal;
     var parked = v.gear === V.parkGear || !v.powered || v.charger;
     var thr = clamp(cmd.throttle || 0, -1, 1);
     if (parked) thr = 0;
+
+    /* ---- 坐垫感应（设置页可关）：开着感应又没坐上去 → 不给起步 ---- */
+    var seatBlocked = !!v.sensors.seat && !v.seatOn && v.gear !== V.parkGear && !parked;
+    if (seatBlocked) thr = 0;
 
     /* ---- 定速巡航：接管油门 ---- */
     if (v.lamps.cruise && !parked && v.gear !== V.parkGear) {
@@ -256,7 +313,7 @@ const TH = C.thermal;
     v.rangeKm = v.rangeFull * v.soc / 100;
 
     /* ---- 氮气条：大功率输出时消耗，制动回收 / 滑行时缓慢回充 ---- */
-    if (v.power > m.powerCap * 0.72) v.nos = clamp(v.nos - dt * 3.5, 0, 100);
+    if (v.power > burnWatt(v)) v.nos = clamp(v.nos - dt * 3.5, 0, 100);
     else if (v.power < -20) v.nos = clamp(v.nos + dt * 1.8, 0, 100);
     else v.nos = clamp(v.nos + dt * 0.35, 0, 100);
 
@@ -264,6 +321,9 @@ const TH = C.thermal;
     if (!parked) v.motorTemp += Math.abs(v.power) / 1000 * TH.heatGain * dt;
     v.motorTemp -= (v.motorTemp - v.ambient) * TH.coolRate * (1 + vAbs / 18) * dt;
     v.motorTemp = clamp(v.motorTemp, v.ambient, TH.max);
+
+    /* ---- 胎压胎温：演示漏气 / 升温 / 丢信号，否则缓慢回到基准 ---- */
+    tickTire(v.tire, dt, v.tireDemo, C.apps.tire.demo, vAbs);
 
     /* ---- 天气轮换（纯 demo；接真实天气源时删掉这段即可） ---- */
     v.weatherT += dt;
@@ -293,7 +353,7 @@ const TH = C.thermal;
     v.lamps.mode = true;
     v.lamps.regen = v.power < -50;
     v.lamps.cruise = !!v.lamps.cruise;
-    v.lamps.seat = !!v.lamps.seat;
+    v.lamps.seat = !!v.sensors.seat && !!v.seatOn;      // 坐垫感应：开着感应 + 检测到有人
 
     /* ---- 告警 ---- */
     var w = warnings(v);
@@ -305,9 +365,29 @@ const TH = C.thermal;
   function warnings(v) {
     var W = C.warnings;
     var list = [];
+    var detail = {};                     // 同一张表下，某些告警要带实测值（胎压 / 胎温）
+    var i, a;
 
     /* 操作台强制点的那一条（演示用：想演哪个提示就演哪个） */
     if (v.forceWarn && W[v.forceWarn]) list.push(v.forceWarn);
+
+    /* 远程推送（天气骤变预警等）：与 forceWarn 分开记账，互不覆盖 */
+    if (v.pushWarn && W[v.pushWarn]) list.push(v.pushWarn);
+
+    /* 胎压胎温（core/tire.js 裁决；阈值是用户设置里那套；总开关关了就不报） */
+    if (v.tireOn !== false) {
+      var ta = tireAlerts(v.tire, v.tireLimits);
+      for (i = 0; i < ta.length; i++) {
+        a = ta[i];
+        if (W[a.id]) {
+          list.push(a.id);
+          if (!detail[a.id]) detail[a.id] = a.text;      // 带轮位与实测值的细文案
+        }
+      }
+    }
+
+    /* 坐垫感应：开着感应、挂了骑行挡、但人没坐上去 → 不给起步 */
+    if (v.powered && v.sensors.seat && !v.seatOn && v.gear !== V.parkGear) list.push('NO_SEAT');
 
     if (v.soc < 10) list.push('CRIT_SOC');
     else if (v.soc < 20) list.push('LOW_SOC');
@@ -322,9 +402,15 @@ const TH = C.thermal;
 
     if (!list.length) return null;
 
-    list.sort(function (a, b) { return W[b].priority - W[a].priority; });
+    list.sort(function (a2, b) { return W[b].priority - W[a2].priority; });
     var def = W[list[0]];
-    return { id: list[0], level: def.level, text: def.text, priority: def.priority };
+    return {
+      id: list[0],
+      level: def.level,
+      text: detail[list[0]] || def.text,
+      priority: def.priority,
+      all: list.slice()                     // 本轮所有成立的告警（消息中心用它记流水）
+    };
   }
 
 /* ============================ 演示自动驾驶 ============================ */
@@ -342,11 +428,12 @@ const TH = C.thermal;
     /* ---------- 1. 上电停放 ---------- */
     if (a.phase === 'park') {
       if (a.t > 0.4 && a.t < 2.0) v.kickstand = true;             // 放下边撑
-      if (a.t > 1.2 && a.t < 1.4) cmd.gear = 'X1';                // 故意挂挡 → 触发告警
+      if (a.t > 1.2 && a.t < 1.4) cmd.gear = 'C';                 // 故意挂挡 → 触发告警
       if (a.t > 2.2) v.kickstand = false;                          // 收起边撑
+      if (a.t > 2.4) v.seatOn = true;                              // 人坐上去（坐垫感应）
       if (a.t > 3.2) {
         v.lamps.lock = false;                                    // 起步前解锁龙头锁
-        shiftGear(v, 'X1');                                      // 起步挡 = 新国标
+        shiftGear(v, 'C');                                       // 起步挡 = 滑行模式（能跑起来）
         a.phase = 'ride';
         a.t = 0;
         a.segT = 0;
@@ -372,6 +459,7 @@ const TH = C.thermal;
 
     /* ---------- 3. 骑行 ---------- */
     a.segT += dt;
+    v.seatOn = true;                                            // 骑行中人在车上（坐垫感应）
 
     /* 人工操作结束后可能停在 P 档：等 2.5 秒自动重新起步 */
     if (v.gear === V.parkGear && v.soc > 8 && !v.charger) {
@@ -379,7 +467,8 @@ const TH = C.thermal;
       if (a.parkT > 2.5) {
         v.kickstand = false;
         v.lamps.lock = false;
-        shiftGear(v, 'X1');
+        v.seatOn = true;                                        // 先坐稳再起步
+        shiftGear(v, 'C');
         a.parkT = 0;
       }
       return cmd;
@@ -389,6 +478,7 @@ const TH = C.thermal;
     /* 低电量：靠边停车插枪 */
     if (v.soc <= 6 && Math.abs(v.speed) < 2) {
       v.charger = true;
+      v.seatOn = false;                                         // 下车插枪
       v.lamps.usb = false;
       v.lamps.lock = true;                                       // 停车插枪：锁上龙头锁
       a.phase = 'charge';
@@ -396,59 +486,70 @@ const TH = C.thermal;
       return cmd;
     }
 
-    /* 段落调度：每隔几秒换一个动作 */
+    /* 段落调度：每隔几秒换一个动作
+       ⚠ 节奏是「动感」的一半：原来 60% 的段落都在打灯 + 刹到 12~22km/h，
+         看久了像台慢车。现在 —— 转向灯 40%、**直线加速 18%（F 挡冲 100+）**、
+         换挡 14%、市区慢速 14%、其余灯光/音源切换。 */
     if (a.segT > a.segLen) {
       a.segT = 0;
-      a.segLen = 7 + Math.random() * 10;
+      a.segLen = 6 + Math.random() * 8;
       var r = Math.random();
-      var mMax = gearDef(v).maxSpeed;
 
-      if (r < 0.60) {
+      if (r < 0.40) {
         /* 演示场景 ①②③：转向灯三连 —— 左转 / 右转 / 双闪**轮流演**，
            而不是各凭概率（否则 240 秒里可能一次双闪都不出现） */
         var turn = (a.turnCycle || 0) % 3;
         a.turnCycle = turn + 1;
-        a.cruise = 12 + Math.random() * 10;
+        a.cruise = 18 + Math.random() * 14;
         if (turn === 0) {
           /* ① 左转 —— 打左转向灯 + 刹到低速 */
-          a.brakeUntil = a.t + 3.5 + Math.random() * 2;
+          a.brakeUntil = a.t + 2.2 + Math.random() * 1.6;
           cmd.turnL = true;
         } else if (turn === 1) {
           /* ② 右转 —— 打右转向灯 + 刹到低速 */
-          a.brakeUntil = a.t + 3.5 + Math.random() * 2;
+          a.brakeUntil = a.t + 2.2 + Math.random() * 1.6;
           cmd.turnR = true;
         } else {
           /* ③ 双闪 —— 靠边示警，左右两颗一起闪，几秒后熄灭 */
-          a.brakeUntil = a.t + 2.5 + Math.random() * 2;
+          a.brakeUntil = a.t + 1.8 + Math.random() * 1.4;
           cmd.hazard = true;
-          a.hazUntil = a.t + 7 + Math.random() * 4;
+          a.hazUntil = a.t + 6 + Math.random() * 4;
         }
-      } else if (r < 0.74) {
-        /* 换挡位并重新定速 */
-        cycleGear(v);
-        a.cruise = 16 + Math.random() * (gearDef(v).maxSpeed - 14);
-        a.cruise = Math.max(14, Math.min(a.cruise, mMax));
-      } else if (r < 0.75) {
+      } else if (r < 0.58) {
+        /* 直线加速段：切到最高挡 + 目标贴量程上限 → 演示能**破百**
+           （F 挡 120km/h；功率能推到 10kW，功率弧打满、氮气条同时开始掉、光带转紫） */
+        if (rideGear(v) !== 'F') shiftGear(v, 'F');
+        a.cruise = gearDef(v).maxSpeed * (0.86 + Math.random() * 0.12);
+      } else if (r < 0.72) {
+        /* 换个挡位（E / C / F 里挑，偏向中高速挡），目标 = 该挡量程的 55%~95% */
+        var pick = Math.random() < 0.5 ? 'F' : (Math.random() < 0.6 ? 'C' : 'E');
+        if (pick !== rideGear(v)) shiftGear(v, pick);
+        a.cruise = Math.max(14, gearDef(v).maxSpeed * (0.55 + Math.random() * 0.40));
+      } else if (r < 0.86) {
+        /* 市区慢速巡航 */
+        a.cruise = 14 + Math.random() * 16;
+      } else if (r < 0.91) {
         /* 开关远光灯（注意：不要同时给 beam，否则会覆盖 beamLow） */
         var high = !v.lamps.beamHigh;
         cmd.setLamp = { beamHigh: high, beamLow: !high };
-      } else if (r < 0.80) {
-        /* 短按喇叭式的功能切换：USB 供电 / 蓝牙 */
+      } else if (r < 0.95) {
+        /* 短按喇叭式的功能切换：USB 供电 */
         cmd.setLamp = { usb: !v.lamps.usb };
-      } else if (r < 0.90) {
+      } else {
         /* 手机音源开 / 关（左侧「音乐」芯片随之点亮） */
         cmd.mediaFlip = true;
-      } else {
-        a.cruise = 18 + Math.random() * 18;
       }
     }
 
-    /* 目标车速 → 油门 */
+    /* 目标车速 → 油门。
+       增益 0.16（原来 0.085）→ 中高速段的跟车明显更"跟脚"，
+       不再出现「目标 100、车慢慢爬」那种拖沓感；上限仍是满油门。 */
     var want = a.cruise;
     if (a.brakeUntil > a.t) want = 5;
 
-    var thr = clamp((want - Math.abs(v.speed)) * 0.085, -0.9, 1);
-    if (want <= 8 && Math.abs(v.speed) > 9) thr = -0.42;    // 明显制动（触发能量回收）
+    var thr = clamp((want - Math.abs(v.speed)) * 0.16, -0.9, 1);
+    /* 要停车时至少给一脚制动（触发能量回收）；已经刹得更狠就别放松 */
+    if (want <= 8 && Math.abs(v.speed) > 9 && thr > -0.42) thr = -0.42;
     cmd.throttle = thr;
 
     /* 转向灯到点自动关（真车是位移 / 时间触发的，这里额外补一刀） */
@@ -466,4 +567,4 @@ const TH = C.thermal;
   }
 
 
-export { create, update, autoDrive, warnings, shiftGear, cycleGear, rideGear, gearDef };
+export { create, update, autoDrive, warnings, shiftGear, cycleGear, rideGear, gearDef, stripMode, burnWatt };

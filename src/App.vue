@@ -7,6 +7,7 @@
  * 所有实时数据都来自 createHud()（provide 给所有子组件）。
  */
 import { ref, onMounted } from 'vue';
+import { RouterView, useRouter } from 'vue-router';
 import { CONFIG as C } from './config.js';
 import { createHud } from './composables/useHud.js';
 import { spriteMarkup } from './core/icons.js';
@@ -22,7 +23,12 @@ import HelpPanel from './components/HelpPanel.vue';
 import ControlPanel from './components/ControlPanel.vue';
 import BootOverlay from './components/BootOverlay.vue';
 
-const hud = createHud();
+/* 五个应用页在 router.js 里注册（路由 = 页面 id = 左灯塔芯片 id）：
+   页面切换由 <RouterView> + <KeepAlive> 负责，路由是「当前打开哪一页」的唯一真相 */
+const router = useRouter();
+const hud = createHud({ router });
+const page = hud.page;          // 当前打开的应用页（'' = 都没开）
+const view = hud.view;          // 8Hz 显示快照（侧边氛围灯带的状态就从这里读）
 // const scale = hud.scale;
 const scale = 1;
 const sprite = spriteMarkup();
@@ -71,9 +77,10 @@ onMounted(function () {
 
         <div class="screen" id="screen">
 
-          <!-- 侧边氛围灯带 -->
-          <span class="strip strip--l" aria-hidden="true"></span>
-          <span class="strip strip--r" aria-hidden="true"></span>
+          <!-- 侧边氛围灯带（颜色 / 闪烁由 view.strip 决定：
+               fault 红闪 · boost 紫闪 · accel 蓝常亮 · brake 绿常亮 · park 黄 · idle 淡青） -->
+          <span class="strip strip--l" :class="'is-' + view.strip" aria-hidden="true"></span>
+          <span class="strip strip--r" :class="'is-' + view.strip" aria-hidden="true"></span>
 
           <div class="hud">
 
@@ -111,6 +118,24 @@ onMounted(function () {
           <WarningBanner />
           <HelpPanel />
           <ControlPanel />
+
+          <!-- ===================== 五个应用页（路由 + 保活） =====================
+               左灯塔五个芯片 / 键盘 I N J T / 地址栏 ?page=xxx 或 #/xxx 打开。
+               · `.pages` 是**常驻的实底容器**：页与页转场时透出来的是这层底色，
+                 不会再像以前那样「v-if 卸载 + 重新淡入」闪一下仪表本体；
+               · <KeepAlive> 缓存访问过的页面 → 切页 / 关页都不卸载
+                 （播放器不断、导航路线不丢、设置里选的那一节还在）；
+               · 没开页面时容器加 .is-off（visibility:hidden + 不吃点击），
+                 所以 HUD 的 DOM 与「没有这一层」时完全一样。 -->
+          <div class="pages" :class="{ 'is-off': !page }">
+            <RouterView v-slot="{ Component, route }">
+              <Transition name="pageSw">
+                <KeepAlive>
+                  <component :is="Component" :key="route.name" />
+                </KeepAlive>
+              </Transition>
+            </RouterView>
+          </div>
 
           <!-- 屏幕质感层 -->
           <div class="fx fx--grid" aria-hidden="true"></div>

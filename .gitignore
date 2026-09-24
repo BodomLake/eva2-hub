@@ -12,6 +12,8 @@ tools/_*.log
 tools/_*.html
 tools/_*.mjs
 docs/_*
+# 仓库根下的一次性临时脚本（探针 / 抓包 / 诊断），用完即删 —— 里面常带 key，别提交
+.tmp-*
 
 # 编辑器
 .DS_Store

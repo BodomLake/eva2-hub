@@ -156,6 +156,136 @@ const SYMBOLS = [
     '<symbol id="i-usb" viewBox="0 0 24 24">' +
       '<rect x="8.6" y="14.4" width="6.8" height="6.4" rx="1.7"/>' +
       '<path d="M12 14.4V4.2"/><path d="M12 4.2 9.6 7.4M12 4.2l2.4 3.2"/>' +
+    '</symbol>',
+
+    /* ============================================================
+     * 第 9 轮新增：五个应用页用到的图标
+     * ========================================================== */
+
+    /* 消息中心：铃铛（未读提示）/ 历史（故障码）/ 天气骤变预警 */
+    '<symbol id="i-bell" viewBox="0 0 24 24">' +
+      '<path d="M6.4 10.2a5.6 5.6 0 0 1 11.2 0c0 4 1.4 5.4 1.4 5.4H5s1.4-1.4 1.4-5.4z"/>' +
+      '<path d="M10.2 18.6a2 2 0 0 0 3.6 0"/>' +
+    '</symbol>',
+    '<symbol id="i-history" viewBox="0 0 24 24">' +
+      '<path d="M3.8 12a8.4 8.4 0 1 0 2.7-6.2"/>' +
+      '<path d="M3.4 4.2v4.4h4.4"/><path d="M12 7.8v4.6l3.2 1.9"/>' +
+    '</symbol>',
+    '<symbol id="i-cloud-bolt" viewBox="0 0 24 24">' +
+      '<path d="M8.2 15.2h8.2a3.6 3.6 0 0 0 .4-7.2 5 5 0 0 0-9.5-.6 3.5 3.5 0 0 0 .9 7.8z"/>' +
+      '<path d="M13.2 14.4l-2.2 3.6h3.2l-2 3.4"/>' +
+    '</symbol>',
+
+    /* 胎压胎温（消息中心 / 设置页共用） */
+    '<symbol id="i-tire" viewBox="0 0 24 24">' +
+      '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3.4"/>' +
+      '<path d="M12 3.6v5M12 15.4v5M3.6 12h5M15.4 12h5"/>' +
+    '</symbol>',
+
+    /* 四种出行模式（core/nav.js 的 MODES 引用这几个 id） */
+    '<symbol id="i-car" viewBox="0 0 24 24">' +
+      '<path d="M3.4 15.4h17.2V12l-1.9-4.6a1.6 1.6 0 0 0-1.5-1H6.8a1.6 1.6 0 0 0-1.5 1L3.4 12z"/>' +
+      '<circle cx="7.4" cy="17.4" r="1.9"/><circle cx="16.6" cy="17.4" r="1.9"/>' +
+      '<path d="M6.4 12h11.2"/>' +
+    '</symbol>',
+    '<symbol id="i-bus" viewBox="0 0 24 24">' +
+      '<rect x="4.6" y="3.4" width="14.8" height="14.6" rx="2.2"/>' +
+      '<path d="M4.6 12.4h14.8M8.6 3.4v4.6M15.4 3.4v4.6"/>' +
+      '<circle cx="8.2" cy="20.4" r="1.4"/><circle cx="15.8" cy="20.4" r="1.4"/>' +
+    '</symbol>',
+    '<symbol id="i-bike" viewBox="0 0 24 24">' +
+      '<circle cx="5.8" cy="17.4" r="3.4"/><circle cx="18.2" cy="17.4" r="3.4"/>' +
+      '<path d="M5.8 17.4 10 8.2h4.4l3.8 9.2"/>' +
+      '<path d="M8.6 8.2h4.6M12.6 8.2l2-3.2h3"/>' +
+    '</symbol>',
+    '<symbol id="i-walk" viewBox="0 0 24 24">' +
+      '<circle cx="13.2" cy="4.2" r="1.8"/>' +
+      '<path d="M13 6.6 10.6 10l2 3.2-1.2 6.8M13 6.6l2.8 3.4M14.4 13.6l1.2 6.4M10.6 10 7.6 12.6"/>' +
+    '</symbol>',
+
+    /* 导航：搜索 / 定位 / key / 路线 */
+    '<symbol id="i-search" viewBox="0 0 24 24">' +
+      '<circle cx="10.6" cy="10.6" r="6"/><path d="M15.1 15.1 20.4 20.4"/>' +
+    '</symbol>',
+    '<symbol id="i-locate" viewBox="0 0 24 24">' +
+      '<circle cx="12" cy="12" r="7.2"/><circle cx="12" cy="12" r="2.2"/>' +
+      '<path d="M12 2.4v3.6M12 18v3.6M2.4 12H6M18 12h3.6"/>' +
+    '</symbol>',
+    '<symbol id="i-key" viewBox="0 0 24 24">' +
+      '<circle cx="7.8" cy="16.2" r="3.6"/>' +
+      '<path d="M10.4 13.6 20.4 3.6M17.4 2.6l4 4M14.8 5.2l4 4"/>' +
+    '</symbol>',
+    '<symbol id="i-route" viewBox="0 0 24 24">' +
+      '<circle cx="5.8" cy="4.6" r="2.2"/>' +
+      '<path d="M8 4.6h5.4a3.4 3.4 0 0 1 0 6.8H9.2a3.6 3.6 0 0 0 0 7.2h4.4"/>' +
+      '<path d="M13.6 16.4l2.8 2.2-2.8 2.2"/>' +
+    '</symbol>',
+
+    /* 播放器：播放 / 暂停 / 上一首 / 下一首 / 随机 / 循环 / 音量 / 文件夹 / 视频 */
+    '<symbol id="i-play" viewBox="0 0 24 24"><path d="M7.6 4.8 19 12l-11.4 7.2z"/></symbol>',
+    '<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.8 5v14M15.2 5v14"/></symbol>',
+    '<symbol id="i-prev" viewBox="0 0 24 24">' +
+      '<path d="M18.6 5.4v13.2L9 12z"/><path d="M5.4 5.4v13.2"/>' +
+    '</symbol>',
+    '<symbol id="i-next" viewBox="0 0 24 24">' +
+      '<path d="M5.4 5.4v13.2L15 12z"/><path d="M18.6 5.4v13.2"/>' +
+    '</symbol>',
+    '<symbol id="i-shuffle" viewBox="0 0 24 24">' +
+      '<path d="M3.6 6.8h3.2l10 10.4h3.6M3.6 17.2h3.2l10-10.4h3.6"/>' +
+      '<path d="M18.2 4.2 20.6 6.8 18.2 9.4M18.2 14.6 20.6 17.2 18.2 19.8"/>' +
+    '</symbol>',
+    '<symbol id="i-repeat" viewBox="0 0 24 24">' +
+      '<path d="M4.6 12a7.4 7.4 0 0 1 7.4-7.4h4.4"/>' +
+      '<path d="M14.4 2.6l2.9 2-2.9 2"/>' +
+      '<path d="M19.4 12a7.4 7.4 0 0 1-7.4 7.4H7.6"/>' +
+      '<path d="M9.6 21.4l-2.9-2 2.9-2"/>' +
+    '</symbol>',
+    '<symbol id="i-volume" viewBox="0 0 24 24">' +
+      '<path d="M4.6 9.6h3.2l4-3.4v11.6l-4-3.4H4.6z"/>' +
+      '<path d="M15 9.4a3.6 3.6 0 0 1 0 5.2M17.6 6.8a7.2 7.2 0 0 1 0 10.4"/>' +
+    '</symbol>',
+    '<symbol id="i-folder" viewBox="0 0 24 24">' +
+      '<path d="M3.4 18.4V6.6a1.6 1.6 0 0 1 1.6-1.6h3.6l2.2 2.6h8.2a1.6 1.6 0 0 1 1.6 1.6v9.2' +
+        'a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6z"/>' +
+    '</symbol>',
+    '<symbol id="i-film" viewBox="0 0 24 24">' +
+      '<rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2"/>' +
+      '<path d="M8.4 4.6v14.8M15.6 4.6v14.8M3.4 9.4h17.2M3.4 14.6h17.2"/>' +
+    '</symbol>',
+
+    /* 设置页：BMS / 保护板 / 连接 / 读取 / 坐垫 / 边撑 / 版权 / 清空 */
+    '<symbol id="i-bms" viewBox="0 0 24 24">' +
+      '<rect x="2.6" y="7.4" width="16.4" height="9.2" rx="2"/>' +
+      '<path d="M21.4 10.4v3.2M6.6 10.6v2.8M10.6 10.6v2.8M14.6 10.6v2.8"/>' +
+    '</symbol>',
+    '<symbol id="i-shield" viewBox="0 0 24 24">' +
+      '<path d="M12 3.2 19.6 6v6.2c0 4.2-2.9 7.4-7.6 8.6-4.7-1.2-7.6-4.4-7.6-8.6V6z"/>' +
+      '<path d="M9 12.2l2.2 2.2 4-4.2"/>' +
+    '</symbol>',
+    '<symbol id="i-link" viewBox="0 0 24 24">' +
+      '<path d="M10 13.8a3.6 3.6 0 0 1 0-5.1l2.6-2.6a3.6 3.6 0 0 1 5.1 5.1l-1.3 1.3"/>' +
+      '<path d="M14 10.2a3.6 3.6 0 0 1 0 5.1l-2.6 2.6a3.6 3.6 0 0 1-5.1-5.1l1.3-1.3"/>' +
+    '</symbol>',
+    '<symbol id="i-refresh" viewBox="0 0 24 24">' +
+      '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.4 4v4.4h-4.4"/>' +
+    '</symbol>',
+    '<symbol id="i-seat" viewBox="0 0 24 24">' +
+      '<path d="M4 15.6h16"/>' +
+      '<path d="M6.4 15.6v3.2a1.4 1.4 0 0 0 1.4 1.4h8.4a1.4 1.4 0 0 0 1.4-1.4v-3.2"/>' +
+      '<path d="M7.6 12.8c2.8-1.6 6.4-1.8 9-.5"/>' +
+      '<path d="M18.2 3.4v4.4M16 5.6h4.4"/>' +
+    '</symbol>',
+    '<symbol id="i-kickstand" viewBox="0 0 24 24">' +
+      '<path d="M15.6 4.4 7.6 15.2l3.4 5"/>' +
+      '<path d="M4.4 20.4h15.2M12.6 4.4h7"/>' +
+    '</symbol>',
+    '<symbol id="i-info" viewBox="0 0 24 24">' +
+      '<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.2M12 7.8v.1"/>' +
+    '</symbol>',
+    '<symbol id="i-trash" viewBox="0 0 24 24">' +
+      '<path d="M4.6 7.4h14.8M9.4 7.4V5.2a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4v2.2"/>' +
+      '<path d="M6.6 7.4l1 12a1.6 1.6 0 0 0 1.6 1.5h5.6a1.6 1.6 0 0 0 1.6-1.5l1-12"/>' +
+      '<path d="M10.4 11v6M13.6 11v6"/>' +
     '</symbol>'
   ];
 

@@ -204,25 +204,104 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 /* ============================ 侧边氛围灯带 ============================ */
-/* 参考图里这两条黄灯条又粗又长，但上下 / 左右都留了一大截距离（不贴边） */
+/* 参考图里这两条黄灯条又粗又长，但上下 / 左右都留了一大截距离（不贴边）。
+   ------------------------------------------------------------------
+   颜色不是固定的：跟着驾驶状态走（状态判定在 core/state.js 的 stripMode()，
+   配置阈值在 config.strip；App.vue 只负责挂 `is-<状态>` 这个类）。
+   每个状态三个令牌：--sc 主色 / --sh 高光 / --sd 暗端（也当外发光用）。
+     is-idle   淡青 · 静止 / 匀速（极缓呼吸，安静）
+     is-accel  蓝色 · 加速（**常亮**，不加动画）
+     is-brake  绿色 · 减速 / 能量回收（**常亮**）
+     is-park   黄色 · 驻车 / 未上电 / 充电（参考图那一帧就是这个状态）
+     is-boost  紫色 · 烧氮气（**闪烁**，快）
+     is-fault  红色 · 故障（**闪烁**，最急）
+   ⚠ 两半要一起改：加状态 = 这里补一条 + state.js 的 stripMode() 补一条 +
+     tools/check.js 的映射表补一条 + tools/smoke.js 的光带断言补一条。 */
 .strip {
   position: absolute;
   top: 34px;
   bottom: 34px;
   width: 16px;
   border-radius: 9px;
+  --sc: #ffc02e;
+  --sh: #ffe58a;
+  --sd: rgba(255, 168, 0, .12);
   background: linear-gradient(180deg,
-      rgba(255, 168, 0, .12) 0%, #ffc02e 14%, #ffe58a 42%,
-      #ffc02e 68%, rgba(255, 168, 0, .12) 100%);
-  box-shadow: 0 0 16px rgba(255, 192, 46, .6), 0 0 42px rgba(255, 140, 0, .34);
+      var(--sd) 0%, var(--sc) 14%, var(--sh) 42%,
+      var(--sc) 68%, var(--sd) 100%);
+  box-shadow: 0 0 16px var(--sc), 0 0 42px var(--sd);
   animation: stripBreath 3.6s ease-in-out infinite;
 }
 .strip--l { left: 22px; }
 .strip--r { right: 22px; animation-delay: -1.8s; }
 
+/* 淡青：静止 / 匀速 —— 呼吸拉到很慢、幅度压小（「安静」） */
+.strip.is-idle {
+  --sc: #7ff0e0;
+  --sh: #d8fffa;
+  --sd: rgba(70, 230, 214, .12);
+  animation: stripIdle 5.2s ease-in-out infinite;
+}
+
+/* 蓝色常亮：加速 */
+.strip.is-accel {
+  --sc: #3aa0ff;
+  --sh: #cfe6ff;
+  --sd: rgba(58, 160, 255, .16);
+  box-shadow: 0 0 18px var(--sc), 0 0 52px var(--sd);
+  animation: none;
+}
+
+/* 绿色常亮：减速 / 能量回收 */
+.strip.is-brake {
+  --sc: #39d98a;
+  --sh: #d6ffe9;
+  --sd: rgba(57, 217, 138, .16);
+  box-shadow: 0 0 18px var(--sc), 0 0 52px var(--sd);
+  animation: none;
+}
+
+/* 黄色：驻车（参考图那一帧）—— 呼吸比淡青快一点，像「怠速待命」 */
+.strip.is-park {
+  --sc: #ffc02e;
+  --sh: #ffe58a;
+  --sd: rgba(255, 168, 0, .12);
+  animation: stripBreath 3.6s ease-in-out infinite;
+}
+
+/* 紫色闪烁：烧氮气 */
+.strip.is-boost {
+  --sc: #a855f7;
+  --sh: #e9d5ff;
+  --sd: rgba(168, 85, 247, .18);
+  box-shadow: 0 0 22px var(--sc), 0 0 60px var(--sd);
+  animation: stripFlash .34s steps(1, end) infinite;
+}
+
+/* 红色闪烁：故障（最快） */
+.strip.is-fault {
+  --sc: #ff2d3d;
+  --sh: #ffd2d6;
+  --sd: rgba(255, 45, 61, .2);
+  box-shadow: 0 0 24px var(--sc), 0 0 64px var(--sd);
+  animation: stripFlash .26s steps(1, end) infinite;
+}
+
 @keyframes stripBreath {
   0%, 100% { opacity: .82; filter: brightness(1); }
   50%      { opacity: 1;   filter: brightness(1.22); }
+}
+
+/* 静止档的呼吸：更慢、更轻 */
+@keyframes stripIdle {
+  0%, 100% { opacity: .68; filter: brightness(.96); }
+  50%      { opacity: .95; filter: brightness(1.1); }
+}
+
+/* 闪烁（硬切，不是渐隐 —— 车上的警示灯就是硬闪） */
+@keyframes stripFlash {
+  0%, 49%   { opacity: 1; filter: brightness(1.25); }
+  50%, 100% { opacity: .22; filter: brightness(.7); }
 }
 
 /* ============================ 屏幕质感层 ============================ */
@@ -262,7 +341,15 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .strip { animation: none; }
+  /* ⚠ 必须把 is-* 那几个也列上：.strip.is-boost 这类选择器优先级更高，
+     只写 `.strip { animation: none }` 是压不住它们的（闪烁照旧） */
+  .strip,
+  .strip.is-idle,
+  .strip.is-park,
+  .strip.is-boost,
+  .strip.is-fault {
+    animation: none;
+  }
 }
 
 /* ==================================================================
@@ -407,4 +494,486 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* ╱ 左下斜：顶栏右块 + 底栏左块 = 上面那块的镜像 */
 .mesh--tr,
 .mesh--bl { clip-path: var(--mesh-slash); }
+
+/* ==================================================================
+ * 应用页框架（第 9 轮新增）
+ * ------------------------------------------------------------------
+ * 左侧灯塔五个芯片打开的页面共用：消息中心 / 导航 / 媒体 / 设置（NERV 占位页）。
+ * 判断标准不变 —— 被 ≥2 个组件用到的才放这里：
+ *   .page / .page__*   页面外壳（AppPage.vue 提供，每个页面都用它）
+ *   .card              切角卡片（每个页面里都有若干块）
+ *   .btn / .seg / .tgl / .fld / .sld / .meter / .kv / .tag / .note / .plist
+ *                      按钮 / 分段选择 / 开关 / 输入 / 滑杆 / 细条 / 键值行 / 标签 / 提示 / 列表行
+ * 页面各自的排版（消息列表、每串电压网格、播放器画面…）写在自己的 <style scoped>。
+ * ================================================================== */
+:root {
+  --c-cyan: #46e6d6;
+  --c-blue: #4ea1ff;
+  --page-cut: 20px;                 /* 卡片 / 面板的 45° 切角边长 */
+  --page-z: 6;                      /* 页面层：压住仪表本体(2)，让告警横幅(8) / 弹框(20) 浮在上面 */
+}
+
+/* 页面层容器：**常驻的实底**（第 10 轮起）—— 页与页转场时透过来的也是这层底色，
+   而不是下面的仪表本体（以前是 .page 自己淡入，中途会闪一下 home）。
+   没开页面时加 .is-off：整层藏起来、不吃点击，HUD 照旧可读可点。 */
+.pages {
+  position: absolute;
+  inset: 0;
+  z-index: var(--page-z);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(72, 10, 18, .92) 0%, rgba(10, 3, 6, .975) 62%, rgba(3, 1, 2, .99) 100%);
+}
+
+.pages.is-off {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 页面之间的转场：交叉淡入（两个页面都是 absolute 铺满 → 互相重叠，
+   所以转场期间一直有实底在，绝不会露出 home）。
+   ⚠ 这几个类名是 <Transition name="pageSw"> 加在**各页面组件根节点**上的，
+   scoped 改写会打不中 → 故意留在公共表里（应用页框架这一节）。 */
+.pageSw-enter-active,
+.pageSw-leave-active {
+  transition: opacity .2s ease, transform .2s ease;
+}
+.pageSw-enter-from { opacity: 0; transform: translateY(8px); }
+.pageSw-leave-to { opacity: 0; transform: translateY(-6px); }
+
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 30px 14px;
+  color: var(--ink);
+}
+
+.page__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 122, 24, .28);
+}
+
+.page__ico {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 38px;
+  color: var(--c-amber);
+  clip-path: var(--hex);
+  background: linear-gradient(180deg, #ffd9a0 0%, #ff7a18 55%, #8f0b16 100%);
+}
+
+.page__ico::after {
+  content: "";
+  position: absolute;
+  inset: 1.6px;
+  clip-path: inherit;
+  background: linear-gradient(180deg, #24080d, #0a0305);
+}
+
+.page__ico .ico {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+}
+
+.page__titles { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.page__title { font-size: 19px; font-weight: 700; letter-spacing: .1em; color: var(--c-orange-2); }
+.page__en {
+  font-size: 10px;
+  letter-spacing: .3em;
+  color: var(--ink-3);
+  font-family: var(--font-num);
+}
+.page__hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--ink-3);
+}
+.page__status { font-size: 11px; letter-spacing: .08em; color: var(--c-amber); font-variant-numeric: tabular-nums; }
+.page__close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 15px;
+  color: #ffd9c9;
+  background: linear-gradient(180deg, #36101a, #14060a);
+  border: 1px solid rgba(255, 90, 42, .45);
+  border-radius: 8px;
+  transition: border-color .15s, box-shadow .15s, color .15s;
+}
+.page__close:hover { color: #fff; border-color: var(--c-orange-2); box-shadow: 0 0 12px rgba(255, 122, 24, .5); }
+
+/* 五个芯片做页签：随手切页，不用先关再开 */
+.page__tabs { display: flex; align-items: center; gap: 6px; padding: 8px 0 6px; }
+.page__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: .06em;
+  color: var(--ink-2);
+  background: linear-gradient(180deg, #1d0a10, #0b0306);
+  border: 1px solid rgba(255, 122, 24, .26);
+  border-radius: 7px;
+  transition: color .15s, border-color .15s, box-shadow .15s;
+}
+.page__tab .ico { width: 15px; height: 15px; }
+.page__tab:hover { color: #ffe9d6; border-color: rgba(255, 171, 61, .6); }
+.page__tab.is-on {
+  color: #1a0507;
+  font-weight: 700;
+  background: linear-gradient(180deg, #ffd166, #e0a11c);
+  border-color: #ffe6a8;
+  box-shadow: 0 0 12px rgba(255, 192, 46, .55);
+}
+
+/* 页面两侧的斜纹装饰（用 .mesh 的令牌，但不占用 .mesh 那个「四块契约」类名） */
+.pmesh {
+  position: absolute;
+  top: 46%;
+  width: calc(var(--mesh-w) * 1.5);
+  height: calc(var(--mesh-h) * 4);
+  opacity: .16;
+  pointer-events: none;
+  background: repeating-linear-gradient(58deg, rgba(255, 255, 255, .5) 0 1px, transparent 1px 7px);
+}
+.pmesh--l { left: 0; clip-path: var(--mesh-slash); }
+.pmesh--r { right: 0; clip-path: var(--mesh-slash-r); }
+
+.page__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  width: 100%;
+  padding: 10px 2px 2px;
+  margin: 0 auto;
+}
+.page__body::-webkit-scrollbar { width: 8px; }
+.page__body::-webkit-scrollbar-track { background: rgba(255, 122, 24, .07); }
+.page__body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ffab3d, #8f0b16);
+  border-radius: 4px;
+}
+
+/* 「一屏装下」的页面（AppPage 的 fit 属性 → .page--fit，目前只有媒体页）：
+   正文区不再滚动，页内自己用 flex 分配高度 —— 以前播放器的画面按 16:9 撑高，
+   把下面那条操作条顶到折叠线以下，得滚一下才点得到。
+   ⚠ 选择器带上 .page 是为了压过 AppPage 里那条 scoped 的 scrollbar-gutter。 */
+.page.page--fit .page__body {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+/* 两列布局的页面（导航 / 媒体）用：左宽右窄 */
+.page__cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+.page__cols--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+/* ============================ 切角卡片 ============================ */
+.card {
+  position: relative;
+  clip-path: polygon(0 0, calc(100% - var(--page-cut)) 0, 100% var(--page-cut), 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(255, 130, 60, .34), rgba(226, 0, 26, .16));
+}
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  clip-path: inherit;
+  background: linear-gradient(180deg, rgba(26, 8, 13, .96), rgba(9, 3, 6, .97));
+}
+.card > * { position: relative; z-index: 1; }
+.card--amber { background: linear-gradient(180deg, rgba(255, 200, 90, .45), rgba(184, 71, 26, .2)); }
+.card--cyan { background: linear-gradient(180deg, rgba(70, 230, 214, .34), rgba(12, 90, 110, .18)); }
+.card--flat { background: rgba(255, 122, 24, .18); }
+.card + .card { margin-top: 10px; }
+.card__hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: var(--c-orange-2);
+  border-bottom: 1px dashed rgba(255, 122, 24, .22);
+}
+.card__hd .ico { width: 16px; height: 16px; }
+.card__hd small {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .16em;
+  color: var(--ink-3);
+}
+.card__body { padding: 9px 14px 11px; font-size: 12px; color: var(--ink-2); }
+
+/* ============================ 表单零件 ============================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: #ffe9d6;
+  background: linear-gradient(180deg, #241016, #120608);
+  border: 1px solid rgba(255, 122, 24, .38);
+  border-radius: 7px;
+  transition: color .15s, border-color .15s, box-shadow .15s, background .15s;
+}
+.btn .ico { width: 15px; height: 15px; }
+.btn:hover { border-color: var(--c-orange-2); box-shadow: 0 0 10px rgba(255, 122, 24, .45); }
+.btn.is-on {
+  color: #0b0203;
+  background: linear-gradient(180deg, #ffd166, #e0a11c);
+  border-color: #ffe6a8;
+  box-shadow: 0 0 12px rgba(255, 192, 46, .6);
+}
+.btn--hot { color: #ffe1e1; border-color: rgba(255, 45, 61, .5); background: linear-gradient(180deg, #3a0c12, #1a0407); }
+.btn--hot.is-on { color: #fff; background: linear-gradient(180deg, #ff5a3d, #c00d18); border-color: #ffb0a0; }
+.btn--ghost { color: var(--ink-2); border-style: dashed; }
+.btn--sm { padding: 3px 8px; font-size: 11px; }
+.btn[disabled] { opacity: .42; cursor: not-allowed; box-shadow: none; }
+
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row--tight { gap: 5px; }
+.row + .row { margin-top: 8px; }
+.spacer { flex: 1 1 auto; }
+
+/* 分段选择（地图供应商 / 出行模式 / 列表过滤） */
+.seg { display: inline-flex; gap: 4px; padding: 3px; background: rgba(255, 122, 24, .1); border-radius: 9px; }
+.seg__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.seg__btn .ico { width: 16px; height: 16px; }
+.seg__btn i { font-size: 9px; letter-spacing: .14em; color: var(--ink-3); }
+.seg__btn:hover { color: #ffe9d6; }
+.seg__btn.is-on {
+  color: var(--c-amber);
+  background: linear-gradient(180deg, rgba(58, 20, 8, .9), rgba(22, 8, 4, .9));
+  border-color: rgba(255, 192, 46, .55);
+  box-shadow: inset 0 0 12px rgba(255, 192, 46, .18);
+}
+.seg__btn small { padding: 0 4px; font-size: 9px; color: #1a0507; background: var(--c-amber); border-radius: 4px; }
+
+/* 输入框 / 下拉 / 数字框 */
+.fld {
+  width: 100%;
+  padding: 6px 9px;
+  font-family: var(--font-num);
+  font-size: 13px;
+  letter-spacing: .04em;
+  color: var(--ink);
+  background: linear-gradient(180deg, #1a0a10, #0b0305);
+  border: 1px solid rgba(255, 122, 24, .32);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fld::placeholder { color: var(--ink-3); font-family: var(--font-ui); letter-spacing: .06em; }
+.fld:focus { border-color: var(--c-orange-2); box-shadow: 0 0 10px rgba(255, 122, 24, .4); }
+.fld--num { text-align: right; font-variant-numeric: tabular-nums; }
+.fld--sm { padding: 4px 7px; font-size: 12px; }
+select.fld { cursor: pointer; }
+.fld__k { flex: none; font-size: 11px; letter-spacing: .08em; color: var(--ink-2); }
+.fld__v {
+  flex: none;
+  min-width: 62px;
+  text-align: right;
+  font-family: var(--font-num);
+  color: var(--c-amber);
+  font-variant-numeric: tabular-nums;
+}
+.fld__v i { margin-left: 2px; font-size: 10px; color: var(--ink-3); }
+
+/* 开关（坐垫感应 / 边撑感应 / 各种总开关） */
+.tgl { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.tgl__track {
+  position: relative;
+  width: 44px;
+  height: 20px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #2a0b12, #12050a);
+  border: 1px solid rgba(255, 122, 24, .35);
+  transition: background .18s, border-color .18s, box-shadow .18s;
+}
+.tgl__dot {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #8d99a4, #3a4249);
+  transition: left .18s, background .18s;
+}
+.tgl.is-on .tgl__track {
+  border-color: rgba(255, 230, 168, .8);
+  background: linear-gradient(180deg, #ffd166, #c8801a);
+  box-shadow: 0 0 12px rgba(255, 192, 46, .5);
+}
+.tgl.is-on .tgl__dot { left: 26px; background: linear-gradient(180deg, #fff8e6, #ffb020); }
+.tgl__txt { font-size: 12px; color: var(--ink-2); }
+.tgl.is-on .tgl__txt { color: #ffe9d6; }
+
+/* 滑杆（温度上限 / 播放进度这类） */
+.sld {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.sld::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 122, 24, .9), rgba(255, 45, 61, .55));
+}
+.sld::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff8e6, #ffb020 62%, #8a4a06);
+  border: 1px solid rgba(255, 240, 200, .8);
+  box-shadow: 0 0 8px rgba(255, 192, 46, .8);
+}
+.sld::-moz-range-track { height: 4px; border-radius: 3px; background: rgba(255, 122, 24, .75); }
+.sld::-moz-range-thumb { width: 12px; height: 12px; border: 1px solid #ffe6a8; border-radius: 50%; background: #ffc02e; }
+
+/* 细进度条（胎压 / 温度 / 导航进度） */
+.meter {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #2a0b12, #100408);
+  border: 1px solid rgba(255, 122, 24, .28);
+}
+.meter__fill {
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ffab3d, #e2001a);
+  transition: width .2s;
+}
+.meter__fill.is-ok { background: linear-gradient(90deg, #b9ffd8, #21bb69); }
+.meter__fill.is-warn { background: linear-gradient(90deg, #ffd166, #d8960a); }
+.meter__fill.is-crit { background: linear-gradient(90deg, #ff5a3d, #8f0b16); }
+
+/* 键值行 / 标签 / 小字提示 */
+.kv { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px dashed rgba(255, 255, 255, .06); }
+.kv:last-child { border-bottom: 0; }
+.kv__k { flex: none; width: 94px; color: var(--ink-3); letter-spacing: .06em; }
+.kv__v { color: var(--ink); font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.kv__v em { margin-left: 4px; font-family: var(--font-ui); font-size: 10px; color: var(--ink-3); }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--ink-2);
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 5px;
+}
+.tag--amber { color: #ffd9a0; border-color: rgba(255, 192, 46, .55); }
+.tag--red { color: #ffb0a0; border-color: rgba(255, 45, 61, .6); }
+.tag--green { color: #b9ffd8; border-color: rgba(57, 217, 138, .55); }
+.tag--cyan { color: #b6fff6; border-color: rgba(70, 230, 214, .5); }
+.tag--dim { color: var(--ink-3); border-color: rgba(255, 255, 255, .1); }
+
+.note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: .04em;
+  color: var(--ink-3);
+}
+.note b { color: var(--c-amber); font-weight: 600; }
+.note code {
+  padding: 0 4px;
+  font-family: var(--font-num);
+  font-size: 11px;
+  color: #ffd9a0;
+  background: rgba(255, 122, 24, .12);
+  border-radius: 4px;
+}
+.empty { padding: 26px 0; text-align: center; font-size: 12px; letter-spacing: .1em; color: var(--ink-3); }
+
+/* 列表行（消息中心 / 播放列表共用；页面里再补各自的列宽） */
+.plist { display: flex; flex-direction: column; gap: 5px; }
+.plist__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: linear-gradient(90deg, rgba(255, 122, 24, .07), rgba(255, 122, 24, 0));
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 7px;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.plist__row:hover { color: #ffe9d6; border-color: rgba(255, 171, 61, .45); }
+.plist__row.is-on {
+  color: #fff;
+  border-color: rgba(255, 192, 46, .6);
+  background: linear-gradient(90deg, rgba(255, 122, 24, .28), rgba(255, 122, 24, .04));
+  box-shadow: inset 0 0 14px rgba(255, 192, 46, .16);
+}
+.plist__row i { font-size: 11px; color: var(--ink-3); }
+
+/* 转场动效收敛：减少动效时不做「淡入 + 位移」，直接换页
+   （.pages 那层实底照旧在，所以也不会闪到 home） */
+@media (prefers-reduced-motion: reduce) {
+  .pageSw-enter-active,
+  .pageSw-leave-active {
+    transition: none;
+  }
+  .pageSw-enter-from,
+  .pageSw-leave-to {
+    opacity: 1;
+    transform: none;
+  }
+}
 

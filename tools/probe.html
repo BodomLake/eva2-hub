@@ -18,7 +18,7 @@
     app    iframe 里的地址（默认 ?photo=park；给 ?nofreeze=1 就是正常上电开机）
     wait   量之前先等多少毫秒（虚拟时间；默认 1200）
     sel    要量几何的元素（`;` 分隔）→ rect / transform / clip-path 顶点（% 折算成 px）
-           / --mesh-dy / --boot-rows / overflow-y / 计算底色（bg / bgImg）/ class / 行内 width
+           / --mesh-dy / --boot-rows / --mark-o / overflow-y / 计算底色（bg / bgImg）/ class / 行内 width
            / position / z-index / opacity / mix-blend-mode / animation-name / mask-image
            / fill（SVG 图形的实际填充 → 用来验证 :deep() 契约）
            clip-path 若是 url(#id) → 还会给出 clipId + clipPts（那层 clipPath 里的
@@ -48,9 +48,14 @@
     timeout   when/whenGone 最多轮询多少毫秒（默认 6000，超时就照常量一次）
 
     js     在 iframe 里求值一个表达式，结果进 out.js{"表达式": 值}（诊断用）
-           例：js=[EVA_HUD.input.keys,EVA_HUD.panelOpen.value]
+           例：js=[EVA_HUD.input.keys,EVA_HUD.page.value]
            用来回答「监听到底绑上没有」「状态翻没翻」这种光看 DOM 看不出来的问题
            ⚠ 表达式之间用 `|` 分隔（`;` 和 `,` 留给表达式自己）
+
+    reload     刷新复现（毫秒）：进页面后在同一个文档里切到 `#/<reloadHash>`（hash 路由
+               不重新加载），再**真刷新一次** —— 新文档的 Navigation Timing type = 'reload'，
+               正好复现「地址栏留着 #/set 时按 F5」。刷新完等 iframe 的 load 事件再往下量。
+    reloadHash 深链用哪一页（默认 set）—— 用来断言「刷新一律回仪表本体（#/）」
 
   量到的几何会被 smoke.js 用来断言「斜纹块是平行四边形 / 左右严格镜像 / 与红框等高 /
   开机自检文本不压进度条 / 操作弹框按钮数与不越界」，text/click 则用来验证交互链路。
@@ -73,6 +78,8 @@
   var when = q.get('when') || '';
   var whenGone = q.get('whenGone') || '';
   var timeout = Number(q.get('timeout') || 6000);
+  var reload = Number(q.get('reload') || 0);
+  var reloadHash = q.get('reloadHash') || 'set';
 
   var f = document.getElementById('stage');
   f.style.width = '1300px';
@@ -132,6 +139,10 @@
           top: cs.top, transform: cs.transform,
           dy: (cs.getPropertyValue('--mesh-dy') || '').trim(),
           rows: (cs.getPropertyValue('--boot-rows') || '').trim(),
+          /* 徽记（.b-mark）的浓淡来自 config，但**当帧 opacity 读不到它** ——
+             动画停在第一帧时读到的是 markIn 的 from 值（.2），所以把行内变量
+             --mark-o 一起量出来（写法同 dy / rows；立绘那边同理读内层 --art-o） */
+          markO: (cs.getPropertyValue('--mark-o') || '').trim(),
           overflowY: cs.overflowY,
           /* 计算样式的底色（用来断言「JS 生成的节点真的被 scoped 样式命中」：
              scoped CSS 漏了 :deep() 时，条子会是全透明 + 零宽度） */
@@ -249,7 +260,8 @@
     });
   }
 
-  setTimeout(function () {
+  /* 量之前要做的事（点 / 按键 / 轮询条件）—— 刷新复现时这套流程要等刷新完再跑 */
+  function run() {
     var d = f.contentDocument;
     clicks.forEach(function (s) {
       var el = d.querySelector(s);
@@ -290,7 +302,23 @@
       } else if (Date.now() - t0 > timeout) measure(); /* 超时也量，便于在 smoke 里报出真实状态 */
       else setTimeout(poll, 60);
     })();
-  }, wait);
+  }
+
+  /* 刷新复现：先切到深链（同一个文档里换 hash，不重新加载），再真刷新一次。
+     ⚠ 这测的是「刷新 = 重新上电」那条链路：刷新后的文档 Navigation Timing
+     type = 'reload' → router.js 的 bootPath() 应该把页面踢回 '/'（地址栏变 …/#/）。
+     刷新会重建 iframe 的文档，所以流程挂在 iframe 的 load 事件上。 */
+  if (reload) {
+    setTimeout(function () {
+      try { f.contentWindow.location.hash = '#/' + reloadHash; } catch (e) { /* 忽略 */ }
+      setTimeout(function () {
+        f.onload = function () { f.onload = null; setTimeout(run, wait); };
+        try { f.contentWindow.location.reload(); } catch (e) { setTimeout(run, wait); }
+      }, 300);
+    }, wait);
+  } else {
+    setTimeout(run, wait);
+  }
 })();
 </script>
 </body>

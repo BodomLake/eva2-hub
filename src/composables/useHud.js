@@ -11,13 +11,42 @@
  * useHudContext()）。车辆状态本身是普通对象，接真实数据（CAN / BLE /
  * WebSocket）时按字段写进去即可，渲染层一行都不用改。
  */
-import { reactive, ref, provide, inject } from 'vue';
-import { CONFIG as C, clamp, pad } from '../config.js';
-import { create, update, autoDrive, warnings } from '../core/state.js';
+import { reactive, ref, computed, provide, inject, watch } from 'vue';
+import { CONFIG as C, clamp, pad, copy } from '../config.js';
+import { create, update, autoDrive, warnings, stripMode } from '../core/state.js';
 import { createInput } from '../core/input.js';
+import { createMessages } from '../core/messages.js';
+import { createSettings } from '../core/settings.js';
+import { tireStat } from '../core/tire.js';
 
 /* provide/inject 的键（Symbol 避免命名冲突） */
 export const HUD_KEY = Symbol('eva-hud');
+
+/* ---------------------------------------------------------------
+ * 展示用的胎压快照（kPa / bar 两种单位、进度条用的百分比都算好）
+ * ------------------------------------------------------------- */
+function tireView(v) {
+  const t = v.tire || { wheels: {} };
+  const hi = (C.apps.tire.limits && C.apps.tire.limits.kPaHigh) || 320;
+  function one(id) {
+    const x = (t.wheels && t.wheels[id]) || { kPa: 0, temp: 0, name: id };
+    return {
+      id: id,
+      name: x.name || id,
+      kPa: Math.round(x.kPa),
+      bar: (x.kPa / C.apps.tire.barDiv).toFixed(2),
+      temp: Math.round(x.temp),
+      pct: clamp(Math.round(x.kPa / hi * 100), 0, 100)
+    };
+  }
+  return {
+    on: v.tireOn !== false,
+    sensor: !!t.sensor,
+    front: one('front'),
+    rear: one('rear'),
+    stat: tireStat(t)
+  };
+}
 
 /* ---------------------------------------------------------------
  * 显示快照：把 state 里渲染层需要的部分拍平成「字符串 / 数字 / 布尔」
@@ -30,7 +59,7 @@ function snapshot(v) {
   const speed = Math.round(Math.abs(v.speed));
   const now = new Date();
 
-  /* 挡位：P 驻车；骑行时是 A/E/C/F/X1/X2 */
+  /* 挡位：P 驻车；骑行时是 A/E/C/F（X1 / X2 暂停用） */
   const parked = v.gear === C.vehicle.parkGear;
   const gdef = C.vehicle.gears[parked ? v.gearLast : v.gear] ||
                C.vehicle.gears[C.vehicle.gearOrder[0]];
@@ -97,10 +126,21 @@ function snapshot(v) {
     /* 指示灯与告警（turnL / turnR / hazard 都在 lamps 里） */
     lamps: Object.assign({}, v.lamps),
     hazard: !!v.lamps.hazard,
-    mediaPlaying: !!v.media.playing,
+    mediaPlaying: !!v.media.playing || !!v.media.local,
     warning: v.warning
       ? { id: v.warning.id, level: v.warning.level, text: v.warning.text }
       : null,
+
+    /* 侧边氛围灯带（App.vue 的两条 .strip）：状态 → 类名 `is-<strip>`
+       fault 红闪 / boost 紫闪 / accel 蓝常亮 / brake 绿常亮 / park 黄 / idle 淡青
+       —— 判定在 core/state.js 的 stripMode()，颜色在 base.css 的 .strip.is-* */
+    strip: stripMode(v),
+
+    /* 胎压胎温 / 感应开关（设置页、消息中心、告警文案共用） */
+    tire: tireView(v),
+    seatSensor: !!v.sensors.seat,
+    kickstandSensor: !!v.sensors.kickstand,
+    seatOn: !!v.seatOn,
 
     /* 操作台（ControlPanel）要显示/绑定的几项 —— 面板只读 view，写走 send() */
     powered: !!v.powered,
@@ -114,7 +154,7 @@ function snapshot(v) {
 
 /* ---------------------------------------------------------------
  * ?photo=字段:值,字段:值 —— 冻结画面，用于设计走查 / 出图
- *   index.html?photo=speed:35,power:1800,gear:X1,lamp.turnR:1
+ *   index.html?photo=speed:35,power:7800,gear:F,lamp.turnR:1
  *   index.html?photo=turn:left      # 左转向（right / hazard 类推）
  * ------------------------------------------------------------- */
 function applyPhoto(v, search) {
@@ -138,13 +178,162 @@ function applyPhoto(v, search) {
   return true;
 }
 
-export function createHud() {
+export function createHud(opts) {
+  /* vue-router 实例（App.vue 里 useRouter() 传进来）—— 它是「当前打开哪一页」的
+     唯一真相；传空时退回内部 ref（Node / 单测里不装路由也能跑） */
+  const router = (opts && opts.router) || null;
   const vehicle = create();
   const view = reactive(snapshot(vehicle));
   const helpOpen = ref(false);
   /* 操作弹框：默认关闭；?panel=1 直接打开（出图 / 冒烟测试用） */
   const panelOpen = ref(/[?&]panel=1/.test(window.location.search));
   const scale = ref(1);
+
+  /* ---------------------------------------------------------------
+   * 应用页（左灯塔五个芯片）的共享状态
+   *   messages 消息中心：全系统的提示都进这里，左侧「消息」芯片角标读它的未读数
+   *   settings 用户设置：胎压阈值 / 感应开关 / 地图 key / 播放器 / BMS → 存浏览器
+   *   page     当前打开的应用页（'' = 都没开；?page=msg|nav|nerv|music|set 可直达）
+   * 导航 / 播放器 / BMS 自己的 UI 状态放在各自组件里，这里只放「跨组件要用」的部分。
+   * ------------------------------------------------------------- */
+  const messages = createMessages();
+  const msgState = reactive({ list: [], unread: 0, total: 0 });
+  const settings = createSettings();
+  const PAGES = ['msg', 'nav', 'nerv', 'music', 'set'];
+  const pageHit = /[?&]page=([a-z]+)/.exec(window.location.search);
+  const localPage = ref(pageHit && PAGES.indexOf(pageHit[1]) >= 0 ? pageHit[1] : '');
+
+  /* 当前页面 = 当前路由的 name（hud = 都没开）；没有 router 时用内部 ref 兜底。
+     两者形状一样（都是带 .value 的响应式），所以 LeftRail / Esc / 快照不用区分。 */
+  const page = router
+    ? computed(function () {
+        const n = router.currentRoute.value.name;
+        return PAGES.indexOf(n) >= 0 ? n : '';
+      })
+    : localPage;
+
+  /* 换路由（保活：页面实例不会卸载，只是切到前台 / 退到后台）。
+     ⚠ 「再点一次同一个芯片 = 关掉」不能拿 page.value 判断 —— 路由切换是异步的，
+     连点两个芯片时它还是旧值（会把「切到 B」误判成「再点 A → 关掉」）。
+     所以记一个**最近一次请求的目标**，并用 afterEach 跟真实路由对齐。 */
+  const target = ref(page.value);
+  if (router && router.afterEach) {
+    router.afterEach(function (to) {
+      const n = to && to.name;
+      target.value = PAGES.indexOf(n) >= 0 ? n : '';
+    });
+  }
+
+  function go(name) {
+    target.value = PAGES.indexOf(name) >= 0 ? name : '';
+    const r = router.push({ name: name });
+    if (r && r.catch) r.catch(function () { /* 重复导航 / 被中断：忽略 */ });
+  }
+
+  /* 应用页开关：再点一次同一个芯片 = 关掉这一页（回到仪表本体） */
+  function openPage(id) {
+    if (PAGES.indexOf(id) < 0) return;
+    const next = target.value === id ? '' : id;
+    target.value = next;
+    if (router) go(next || 'hud');
+    else localPage.value = next;
+  }
+  function closePage() {
+    target.value = '';
+    if (router) go('hud');
+    else localPage.value = '';
+  }
+  const mediaLocal = reactive({ playing: false });
+
+  function syncMessages() {
+    msgState.list = messages.items.slice();
+    msgState.unread = messages.unread();
+    msgState.total = messages.items.length;
+  }
+  messages.subscribe(syncMessages);
+  syncMessages();
+
+  /* （openPage / closePage 已经改成走路由，见上面 go()） */
+
+  /* --------------------- 给外部数据源用的三个入口 ---------------------
+   * 远程推送（天气骤变预警…）：命中 config.warnings 的 code 会**同时**弹顶部横幅；
+   * WebSocket / HTTP 拿到消息后调 window.EVA_HUD.pushAlert({...}) 即可。 */
+  function pushAlert(a) {
+    const it = messages.push(Object.assign({ kind: 'info', from: '远程推送' }, a || {}));
+    if (a && a.code && C.warnings[a.code] && settings.value.msg.push) vehicle.pushWarn = a.code;
+    syncView();
+    return it;
+  }
+  function pushMessage(m) { const it = messages.push(m); syncView(); return it; }
+  function pushFault(f) { const it = messages.pushFault(f); syncView(); return it; }
+  function clearAlerts() { vehicle.pushWarn = null; syncView(); }
+
+  /* 告警 → 消息中心：横幅上出现的每一条都在消息中心留一笔（去重交给 messages 层） */
+  let lastWarnKey = '';
+  function kindOfWarn(id) {
+    if (id.indexOf('TIRE_') === 0) return 'tire';
+    if (id === 'WEATHER_ALERT') return 'weather';
+    return 'system';
+  }
+  function bridgeWarnings() {
+    const w = vehicle.warning;
+    const key = (w && w.all) ? w.all.join('|') : '';
+    if (key === lastWarnKey) return;
+    lastWarnKey = key;
+    if (!w || !w.all) return;
+    w.all.forEach(function (id) {
+      const def = C.warnings[id];
+      if (!def) return;
+      messages.push({
+        kind: kindOfWarn(id),
+        level: def.level,
+        code: id,
+        title: def.label,
+        text: id === w.id ? w.text : def.text,
+        from: '整车系统'
+      });
+    });
+  }
+
+  /* 设置 → 车辆状态（胎压阈值 / 演示开关 / 感应开关 / 监控总开关） */
+  function applySettings() {
+    const s = settings.value;
+    vehicle.tireLimits = {
+      front: copy(s.tire.wheels.front),
+      rear: copy(s.tire.wheels.rear)
+    };
+    vehicle.tireDemo = { leak: s.tire.leak, heat: s.tire.heat, drop: s.tire.drop };
+    vehicle.tireOn = !!s.tire.monitor;
+    vehicle.sensors = { seat: s.sensors.seat, kickstand: s.sensors.kickstand };
+    syncView();
+  }
+  settings.onChange(applySettings);
+  applySettings();
+  if (settings.value.msg.faults) messages.seedFaults(C.apps.faults.history);
+
+  /* settings.value 本身是普通对象（core 层不依赖 Vue），所以这里再包一层响应式：
+     组件（设置页 / 导航页）直接改 settings.state.xxx → 深度监听 → 存浏览器 + 同步车辆。
+     写盘做 150ms 防抖：导航页里输 key 是一边打字一边存的。 */
+  const settingsState = reactive(settings.snapshot());
+  let saveTimer = 0;
+  watch(settingsState, function () {
+    if (saveTimer) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(function () {
+      saveTimer = 0;
+      settings.patch(settingsState);
+    }, 150);
+  }, { deep: true });
+  function resetSettings() {
+    settings.reset();
+    Object.assign(settingsState, settings.snapshot());
+  }
+
+  /* 本地播放器开关（左侧「音乐」芯片要点亮本地播放，不只是手机音源） */
+  function setMediaPlaying(on) {
+    mediaLocal.playing = !!on;
+    vehicle.media.local = !!on;
+    syncView();
+  }
 
   const hooks = [];              // 60fps 通道回调
   let running = false;
@@ -154,11 +343,56 @@ export function createHud() {
   let lastW = 0;
   let lastH = 0;
 
+  /* ---------------------------------------------------------------
+   * 诊断开关：?gearburst=N —— 每 220ms 换一次挡，换 N 次后停
+   * ---------------------------------------------------------------
+   * 用途：复现 / 盯住「换挡时中央立绘有概率消失」那个 bug。
+   * 无头探针里没法真的「连按」（probe.html 的按键是一次性派发的，同一个 tick
+   * 里连按 6 个挡位键只会换一次），所以这里给一个地址栏开关，让它跨帧换挡，
+   * 并在每次换挡的**下一帧**检查一遍「中央那一层还有没有东西」，把结果记在
+   * window.__gearburst（{n, empty, min, max}）里给冒烟断言读。
+   * ⚠ 跟 ?photo= / ?panel=1 / ?probe=1 同一类：只在地址栏显式打开时才跑，
+   *   不影响正常启动，也不参与打包行为。 */
+  function startGearBurst(times) {
+    const order = C.vehicle.gearOrder.slice();
+    const stat = { times: times, done: 0, empty: 0, min: 99, max: 0, finished: false };
+    if (typeof window !== 'undefined') window.__gearburst = stat;
+    let i = 0;
+    const tick = window.setInterval(function () {
+      /* 先验收上一轮换挡的结果（这一句就是那个 bug 的「症状探针」） */
+      const layers = document.querySelectorAll('.core__layer');
+      const first = layers[0];
+      if (!first || !first.firstElementChild) stat.empty++;
+      if (layers.length < stat.min) stat.min = layers.length;
+      if (layers.length > stat.max) stat.max = layers.length;
+      if (stat.done >= stat.times) {
+        window.clearInterval(tick);
+        stat.finished = true;
+        return;
+      }
+      input.push({ gear: order[i++ % order.length] });
+      dispatch();                       // 出图（冻结）模式也照样换
+      stat.done++;
+    }, 220);
+  }
+  /* 诊断开关的启动：放在 input 建好之后调用（回调里要用 input / dispatch） */
+  function maybeGearBurst() {
+    const m = /[?&]gearburst=(\d+)/.exec(window.location.search);
+    if (m) startGearBurst(Math.max(1, Math.min(40, Number(m[1]) || 8)));
+  }
+
   const input = createInput({
     onToggleHelp: function () { helpOpen.value = !helpOpen.value; },
     onTogglePanel: function () { panelOpen.value = !panelOpen.value; },
-    onClosePanel: function () { panelOpen.value = false; }
+    /* Esc：先关应用页，没有页面再关操作弹框（一层一层退）—— 关页 = 换回 'hud' 路由 */
+    onClosePanel: function () {
+      if (page.value) { closePage(); return; }
+      panelOpen.value = false;
+    },
+    onOpenPage: openPage
   });
+
+  maybeGearBurst();          // ?gearburst=N：连按换挡压力测试（诊断用，默认不跑）
 
   /* ---------------------------- 通道管理 ---------------------------- */
   function registerFrame(fn) {
@@ -172,7 +406,13 @@ export function createHud() {
     for (let i = 0; i < hooks.length; i++) hooks[i](vehicle);
   }
   function syncView() {
-    Object.assign(view, snapshot(vehicle));
+    Object.assign(view, snapshot(vehicle), {
+      msgUnread: msgState.unread,
+      msgTotal: msgState.total,
+      pageOpen: page.value,
+      mediaLocal: mediaLocal.playing
+    });
+    bridgeWarnings();
   }
 
   /* ---------------------------- 等比缩放 ---------------------------- */
@@ -272,6 +512,26 @@ export function createHud() {
     scale: scale,
     frozen: frozen,
     input: input,
+
+    /* ---- 第 9 轮：五个应用页 ---- */
+    page: page,                     // 当前打开的页面 id（'' = 都没开）
+    openPage: openPage,
+    closePage: closePage,
+    messages: messages,             // 消息中心数据层（push / markRead / clear …）
+    msg: msgState,                  // 消息中心的 reactive 门面（list / unread / total）
+    settings: {                     // 用户设置：state = 响应式副本，改动自动存浏览器 + 同步车辆
+      state: settingsState,
+      storage: settings.storage,    // 浏览器缓存到底能不能用
+      defaults: settings.defaults,
+      reset: resetSettings
+    },
+    setMediaPlaying: setMediaPlaying,
+    pushMessage: pushMessage,       // 外部数据源：塞一条消息进消息中心
+    pushAlert: pushAlert,           // 外部数据源：远程推送（命中告警表会同时弹横幅）
+    pushFault: pushFault,           // 外部数据源：记一条故障码
+    clearAlerts: clearAlerts,       // 清掉远程推送那条横幅
+    pages: PAGES,
+
     /* 操作台用：send = 塞一条指令（走 update 的 cmd 通道）；
        hold = 油门脉冲（急加速 / 急减速 / 滑行）；
        refresh = 纯重绘（直接写字段之后用）；dispatch = 消费指令并刷一帧（send 之后用） */

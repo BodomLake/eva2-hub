@@ -50,7 +50,7 @@
 | 六边形核心 | 470 × 440，平顶六边形顶点 (6,220) (117.5,6) (352.5,6) (464,220) (352.5,434) (117.5,434) |
 | 机甲徽记 | 350 × 350（左右镜像绘制，只在六边形内可见） |
 | 中央大字（P / 时速） | 136px（3 位数降到 116px，P 挡 150px），`top:46%` |
-| 挡位铭牌（六边形内） | 中下部 `bottom:72px`，`X1 新国标` 19px + 11px |
+| 挡位铭牌（六边形内） | 中下部 `bottom:72px`，`C 滑行模式` 19px + 11px |
 | TIME/TRIP 圆盘 | 240 × 240，描边 8px（`conic-gradient` 外环 + 暗色内盘）；框内两行 = 金色标签牌 + 白色读数 |
 | 功率圆表 | 268 × 268，粗环半径 128（`stroke-width:12` → 外径 239px，与左侧圆盘等大），刻度 140°→400°，数值弧半径 92 |
 | 功率数值牌 | 自动宽度（`min-width:84px`）+ 圆角，`len-1/2` 62px、`len-3` 49px、`len-4` 37px、`len-5` 30px |
@@ -87,7 +87,7 @@
 | 令牌 | 形状 | 用在哪 |
 | --- | --- | --- |
 | `--penta-tl` | `polygon(0 0, 100% 0, 100% calc(100% − 26px), calc(100% − 26px) 100%, 0 100%)` + 左上圆角 13px | 左上：天气 + 时间芯片 |
-| `--penta-tr` | 镜像：切角在左下、圆角在右上 | 右上：骑行挡位徽标（新国标 / ×2） |
+| `--penta-tr` | 镜像：切角在左下、圆角在右上 | 右上：骑行挡位徽标（挡位名 / 挡位代号） |
 | `--penta-bl` | 切角在右上、圆角在左下 | 左下：网络信号 / 耳机蓝牙 / GPS（**一整块**） |
 | `--penta-br` | 切角在左上、圆角在右下 | 右下：紫色 NOS 氮气条 |
 | `--hex` | `polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)` | **平顶六边形**（上下两条边平行于屏幕横向）：左侧灯塔 5 个 + 中央核心 |
@@ -118,7 +118,8 @@
   —— 与铭牌左右各留 46px、**共用同一条水平中线**（`--mesh-dy: 0`）、
   形状互为镜像（`╲ READY ╱`），所以两块永远一样高、严格对称。
 * 右：**骑行挡位徽标**（`--penta-tr`）—— 左侧上下两块铭牌
-  （当前挡位 `X1 新国标` / `P 驻车` + `×2`），右侧一列
+  （第一行**挡位名** `C 滑行模式` / `P 驻车`，第二行**挡位代号** `C` / `P` ——
+  这块地方讲的就是**挡位**，不是「双电 / ×2 模式」），右侧一列
   **倒三角（指向下）+ 4 个电量点**，全部在**同一个框内**（内铭牌都比外框小一圈，
   不再压住五边形轮廓）；点亮数 = `ceil(SOC/25)`，颜色跟随电量档位（绿 / 琥珀 / 红闪）。
   参考图里那三个小圆按钮（巡航 / ABS / 座桶锁）已按反馈删掉。
@@ -130,19 +131,33 @@
 
 | 芯片 | 状态 | 视觉 |
 | --- | --- | --- |
-| 消息 | 有告警时 | 红闪 + 右上角未读角标 `1` |
+| 消息 | 有告警或消息中心有未读时 | 红闪 + 右上角角标（数字 = 未读数，最多 99） |
 | 导航 | 骑行中（非 P 挡） | 琥珀常亮 |
 | NERV | 上电即常亮 | 橙 + 3.4s 核心心跳呼吸 |
-| 音乐 | `state.media.playing` | 琥珀常亮 |
-| 设置 | 帮助浮层打开 | 琥珀常亮 |
+| 音乐 | 手机音源或本地播放器在放 | 琥珀常亮 |
+| 设置 | 设置页 / 帮助浮层 / 操作弹框 | 琥珀常亮 |
+| 任意一颗 | **它对应的应用页正开着** | 底色换成琥珀描边（`is-open`）—— 和「亮着」区分开，所以「导航亮着」不会被看混成「导航页开着」 |
+
+五颗芯片**都可以点**：点一下打开对应的应用页、再点一下关掉（第 3 颗 NERV 目前是占位页）；
+键盘 `I` / `N` / `J` / `T` 同效，地址栏 `?page=msg|nav|nerv|music|set` 或 `#/msg` 直达
+（第 10 轮：页面切换走 vue-router + `<KeepAlive>`，见下）。
 
 ### 中央核心（平顶六边形）
 
 * **一个大字槽**：`P` 挡显示 `P`；挂上骑行挡位后显示**时速数字**
   （136px，3 位数降到 116px，`P` 挡放大到 150px），下方固定 `km/h`
-* **六边形内部中下方 = 挡位铭牌**：`X1 新国标` / `P 驻车`（19px + 11px）
+* **六边形内部中下方 = 挡位铭牌**：`C 滑行模式` / `P 驻车`（19px + 11px）
 * **换挡心跳**：`view.gear` 变化时给 `.core` 挂 0.56s 的 `coreBeat` 动画
   （1 → 0.88 → 1.015 → 1），即「先变小再弹回现在这个大小」
+* **六边形里的图案**（第 10 轮）：`A / C / E / F` 用 `config.vehicle.gearArt` 指定的**挡位图**
+  （原图在 `src/assets/gear/` → `npm run art` → `src/assets/art/gear-*.png`，由 `core/artslot.js`
+  按名字解析成 URL），`<img object-fit: cover>` 铺满六边形（形状仍由 `.core__hex` 的 `clip-path`
+  裁），上面压一层 `veil` 暗幕 → 「时速 / P」与挡位铭牌在任何图上都读得清；`P` 没有
+  对应图 → 回落 `emblem.js` 的**原创机甲徽记**（`fallbackEmblem`）。
+  ⚠ **换挡时图案不许空一拍**（第 12 轮修的 bug）：不用 `<Transition mode="out-in">`，
+  改成两层图层 —— 当前层（`#v-gear-art` / `#v-emblem` / `#v-gear-veil` 都在这层）
+  **无动画常显**，旧层 `.core__layer--out` 盖在上面 `gearFadeOut` 淡出、由**定时器**
+  （`config.strip.fadeMs`）摘掉；四张挡位图在 `onMounted` 里 `new Image()` **预解码**
 * **左下斜边**：`ODO`（10px 灰标签 + 24px 琥珀读数 + `km`）
 * **右下斜边**：**龙头锁**开关（车把+锁体图标 + `OFF / ON`）——
   **OFF 是红色**（未锁 = 注意），ON 转琥珀
@@ -152,9 +167,13 @@
 ### 功率圆表（粗环）
 
 * 最外圈是**整圆粗描边**（`stroke-width:12`，径向渐变 橙→红，外径与左侧圆盘同为 240px）
-* 内侧 32 格刻度（每 4 格一个大刻度 = 200W），满量程取所有挡位功率上限的
-  向上取整（当前 1800W）
+* 内侧 **40 格**刻度（每 4 格一个大刻度 = 1000W），满量程取所有挡位功率上限的
+  向上取整（当前 **10000W = 满量程 10kW**，F 激烈模式）
 * 数值弧半径 92、线宽 14，正功率红橙渐变，负功率（回收）切绿色 + `RECUP` 呼吸
+* ⚠ 量程取自 `config.vehicle.gears`（**每个挡位的 `powerCap` 取最大**再向上取整到 200），
+  进 SVG 的每个数字都过 `num()` / `f2()`（NaN / undefined 当 0）——
+  量程算成 0 时这里会画出 `"…A92 92 0 0 1 NaN NaN"` 并在控制台刷 `<path> d` /
+  `<circle> cx` 的报错，有功率时又会因为 `x/0 = Infinity` 把弧画满（第 11 轮修的坑）
 * 圆表中心自上而下：**功率数值牌**（自动宽度圆角牌，位数越多字号越小）→ `W`
   → `MOTOR 116℃`；底部铭牌显示当前挡位名
 * 左转向 / 右转向曾经挂在这里，**第三轮已按反馈移到 `READY` 左右两侧**
@@ -182,17 +201,54 @@
 
 ---
 
+### 应用页（AppPage.vue + 五个页面）
+
+左灯塔五个芯片打开的面板：**消息中心 / 导航 / NERV / 媒体播放器 / 设置**。
+第 10 轮起走 **vue-router**（hash 模式，`src/router.js` 一张**写明**的表）+ `<KeepAlive>`：
+`/` = 仪表本体，`/msg` `/nav` `/nerv` `/music` `/set` = 五个页面；「当前打开哪一页」= 路由 `name`
+（`useHud` 的 `page` 就是它的 computed）→ 左灯塔高亮 / `Esc` 逐层退 / `?page=` 全都没变。
+**切页 / 关页都不卸载**（缓存住的页面只是「退到后台」，见下面的「保活」行）。
+
+| 部件 | 规格 |
+| --- | --- |
+| 页面层（**常驻**） | `.pages`：`position: absolute; inset: 0; z-index: var(--page-z) = 6` —— 压住仪表本体（2），但让**告警横幅 8 / 操作弹框 20** 浮在它上面；radial-gradient **实底**（不透出仪表）。页与页**交叉淡入**时透出来的就是这层底色 → 不会再闪一下 home；没开页面时 `.pages.is-off`（`visibility: hidden` + 不吃点击）→ HUD 的 DOM 与「没有这一层」时完全一样 |
+| 转场 / 保活 | `<RouterView v-slot>` + `<Transition name="pageSw">` + `<KeepAlive>`：新页 `pageSw-enter-from`（`opacity:0` + `translateY(8px)`）、旧页 `pageSw-leave-to`，两页都是 `absolute` 铺满 → **同时在场**（交叉淡入，不会经过「什么都不显示」的空档）。保活 = 媒体不断、导航路线不丢、设置里选的那一节还在；⚠ `pageSw-*` 必须写在 `base.css`（类名被 `<Transition>` 加在**各页面组件根节点**上，进 scoped 块会被改写成 `.pageSw-xxx[data-v-…]` 打不中） |
+| 页头 | 平顶六边形芯片标（图标取自 `config.rail[].icon`）+ 中文标题 + 拉丁副标题（`config.pages[id]`）+ hint 一行 + 页面自己的 `#actions` 插槽 + 右侧状态读数 + ✕ |
+| 页签 | 由 `config.rail` 生成的五个芯片按钮，当前页 `is-on`；点一下 `openPage(id)` 横向切页 |
+| 正文 | `.page__body` 按 `config.pages[id].body` 居中收窄（msg 900 / nav 1020 / nerv 620 / music 1020 / **set 1120**——设置页左栏要占 206px） |
+| 一屏装下（`fit`） | `<AppPage … fit>` → `.page--fit`：`base.css` 里这页的 `.page__body` 改成 `overflow: hidden`（并压掉 AppPage 那条 scoped 的 `scrollbar-gutter`），**页内自己用 flex 分高度**。目前只有**媒体页**用：左列播放器卡片撑满 → 画面盒 `.playerwrap > .player` 吃掉富余高度（不再按 16:9 定高），底部操作条 / 进度条 / 音量条永远在可视区内；右列「来源 / 列表（内部滚）/ 支持清单」。⚠ 媒体页的画面盒类名是 `.player*`，**不能叫 `.stage`** —— `base.css` 里 `.stage` 是 HUD 的缩放舞台（1300×760 + `transform`），撞名会把画面盒按舞台尺寸撑开、把操作条盖在底下（`check.js` 第 11 节盯着） |
+| 设置页分节 | 左栏 5 个六边形芯片（复用首页左灯塔的 `.hexchip` / `.chipbg` 零件与点亮色）＝ 胎压胎温 / 感应开关 / 电池 BMS / 消息推送 / 软件信息；右栏**只渲染当前这一节** → 整页不上下滚（BMS 那一节内部再分两列：左「连接 + 环境自检」右「实时数据 + 原始帧」）。选了哪一节是页面自己的状态，靠 KeepAlive 跨切页保留 |
+| 公共零件 | 写在 `base.css`（被 ≥2 个页面用到）：`.pages` / `.pageSw-*` / `.page / .page__*`、`.card`（45° 切角卡片，`--page-cut`）、`.btn / .seg / .tgl / .fld / .sld / .meter / .kv / .tag / .note / .plist`；**各页自己的排版**（消息列表、每串电压网格、播放器画面、设置页的左栏分节…）写在自己的 `<style scoped>` |
+
+打开 / 关闭：点芯片（再点一次关）/ `I`（消息）`N`（导航）`J`（媒体）`T`（设置）/
+地址栏 `?page=xxx` 或 `#/xxx`（前者在 mount 前被 `router.js` 的 `bootPath()` 翻译成路由地址）；
+关闭是 ✕ 或 `Esc`（`useHud` 里排优先级：先关页面、再关弹框）。
+**刷新 = 重新上电**（第 11 轮）：地址栏里留着 `#/set` 时按 F5 不再停在那页 —— `bootPath()` 用
+Navigation Timing 的 `type === 'reload'` 认出「这是刷新」，交给 `router.replace('/')` 归位
+（地址栏随即写成 `…/#/`）；**手打** `#/set` 打开（`type = 'navigate'`）照旧直达。
+⚠ 「再点一次同一个芯片 = 关掉」判的是**最近一次请求的目标**（`useHud` 的 `target`，
+`router.afterEach` 跟真实路由对齐）—— 路由切换是异步的，直接读 `page.value` 在连点两个芯片时
+会拿到旧值、把「切到 B」误判成「再点 A → 关掉」。
+
+⚠️ **`<AppPage>` 必须显式 `import`**：Vue 对「模板里写了却没 import」的组件会退化成运行期
+`resolveComponent()`，**生产构建连警告都没有**、整页静默渲染成空，而 `check` / `build` /
+`smoke` 当时全是绿的（「元素在、内容是空的」这种假绿灯最难查）。现在两道防线：`check.js`
+第 9 节把这类漏 import 直接判 FAIL，`smoke.js` 每页都断言「渲染出自己的正文」。
+
+---
+
 ## 5. 状态机与动效
 
 | 状态 | 触发条件 | 表现 |
 | --- | --- | --- |
 | 上电自检 | 页面加载 | 全屏自检动画（AT 力场环 + 两进制日志 + 进度条 + **两侧立绘从屏幕外划入**），结束向上擦除。**文本域高度 = 行数 × 行高**（`--boot-rows` 由 `config.boot.lines.length` 传入）→ 自检文本永远装在自己的框里，不会压到进度条；行数再多就自动内部滚动。**停留时长可配**：写满进度条后继续停在 100% 等满 `config.boot.minMs`（默认 3000ms）才擦除进主界面；`config.boot.waitEnter = true` 则停在「按任意键 / 点击 进入主界面」等人工操作（改回 `false` 时停留期提示行显示剩余秒数）；地址栏可覆盖（`?boot=5000 / wait / 0`）。立绘：`config.boot.art` 的**预留位**（左 = 驾驶员 / 右 = 机体；`left/right.src` 填 `src/assets/art/` 里的文件名，留空则这一侧不显示；`?art=off` 关掉）。**环里六边形内部**：`config.boot.mark` 的徽记预留位 —— `nerv2.png` 被 `<clipPath id="boot-mark-clip">`（顶点就是 `hexPts` 那份）**裁进那个六边形**，`fit: 'cover'` + `scale: 1.2` 铺满并轻微放大、绕环心缩放淡入；留空 / 图名写错则**六边形里什么都不画**，`?mark=off` 关掉） |
 | 停放 | 挡位 `P` 或充电 | 车速强制 0，中央大字显示 `P`，挡位铭牌 `P 驻车` |
-| 骑行 | 挡位 `A` / `E` / `C` / `F` / `X1` / `X2` | 中央大字显示时速，左侧「导航」芯片点亮 |
-| 换挡 | `1`~`6` 键 / `G` 键 / 演示随机 | 中央六边形播放 0.56s **心跳缩放**，铭牌与右上角徽标同步换字 |
-| 能量回收 | 油门 < 0 或松油门滑行 | 功率转负 → 弧变绿 + `RECUP` 呼吸 |
-| 定速巡航 | 稳定油门 6 秒 或 按键 `C` | 巡航灯亮，速度跌到 3km/h 以下自动退出 |
-| 转向灯 | `A` / `F` | 400ms 闪烁，**300m 或 45s 后自动回位** |
+| 骑行 | 挡位 `A` / `E` / `C` / `F` | 中央大字显示时速，左侧「导航」芯片点亮 |
+| 换挡 | `A` `E` `C` `F` 键 / `G` 键 / 演示随机 | 中央六边形播放 0.56s **心跳缩放**，铭牌与右上角徽标同步换字（挡位图**交叉淡入**：当前层常显 + 旧层淡出，见第十二轮） |
+| 能量回收 | 油门 < 0 或松油门滑行 | 功率转负 → 弧变绿 + `RECUP` 呼吸，**侧灯带转绿常亮** |
+| 定速巡航 | 稳定油门 6 秒 或 按键 `R` | 巡航灯亮，速度跌到 3km/h 以下自动退出 |
+| 转向灯 | `←` / `→`（按住），两个一起按住 = 双闪 | 400ms 闪烁，**300m 或 45s 后自动回位** |
+| 侧灯带 | `stripMode(v)`（故障 > 烧氮气 > 加速 > 减速 > 驻车 > 静止） | 红闪 / 紫闪 / 蓝常亮 / 绿常亮 / 黄 / 淡青 —— 阈值 `config.strip`，颜色 `base.css` 的 `.strip.is-*` |
 | 龙头锁 | `K` 键 / 停车充电 | 六边形右下斜边 `OFF`（**红**）→`ON`（琥珀），ON 时挂挡被拒 |
 | 手机音源 | `Y` 键 / 演示随机 | 左侧「音乐」芯片点亮 |
 | 低电 | SOC 下降 | 条变色 → 横幅 + 铭牌 CHECK → 消息芯片红闪 → 演示靠边停车、插枪、电量回升 |
@@ -210,7 +266,7 @@ NERV 心跳、功率/温度跟随），**换挡时额外来一次心跳**，告�
 
 | 按钮 | 写入路径 | 落到哪里 |
 | --- | --- | --- |
-| 挡位 `P/A/E/C/F/X1/X2` | `send({ gear })` → `input.push()` → `state.update(cmd)` | `shiftGear()`：会被边撑 / 龙头锁 / 充电枪**拒绝并告警**（真车逻辑） |
+| 挡位 `P/A/E/C/F` | `send({ gear })` → `input.push()` → `state.update(cmd)` | `shiftGear()`：会被边撑 / 龙头锁 / 充电枪**拒绝并告警**（真车逻辑） |
 | 定速 / 停车 / 12·25·35·45 | `vehicle.cruiseSpeed` + `lamps.cruise` | 由物理去逼近目标车速（不是直接赋车速） |
 | 急加速 / 急减速 / 滑行 | `hold(1/-1/0, ~2.5s)` | `input.js` 的油门脉冲 + `brakePower` / 能量回收，功率弧真的打满 / 变绿 |
 | 仪表提示 8 连 | `send({ forceWarn })` | `state.warnings()` 里**同一条告警表** → 横幅 / READY 铭牌 / 消息芯片三处一起响应 |
@@ -231,11 +287,11 @@ NERV 心跳、功率/温度跟随），**换挡时额外来一次心跳**，告�
 | 左上：`雾` + `15:43`（一个芯片，上天气下时间） | `TopBar.vue` 的 `.timechip.chip--tl` |
 | 顶栏中间 `READY` + 左右两颗箭头 | `.plaque` + `.turn--l / .turn--r`（双闪 = 两颗一起闪） |
 | `READY` 两侧那条斜向灰黑细纹饰带 | `.mesh`（顶栏 2 块：`╲ READY ╱`，共用同一中线、互为镜像） |
-| 右上：挡位名（`新国标` / `×2`）+ 倒三角 + 4 圆点，全在框内 | `.gearchip.chip--tr`（内铭牌比外框小一圈） |
+| 右上：挡位名（`滑行模式`）+ 挡位代号（`C`）+ 倒三角 + 4 圆点，全在框内 | `.gearchip.chip--tr`（内铭牌比外框小一圈） |
 | 左侧一列 5 个六边形功能灯 | `.rail` + `.hexchip`（消息/导航/NERV/音乐/设置） |
 | 六边形**压住**左右两个粗线圆 | `.timedial` / `.side`（各伸进 45px）+ `.core { z-index:3 }` |
 | 六边形左侧的粗线圆（TIME / TRIP，金字标签 + 白读数） | `.timedial`（`conic-gradient` 粗环，外径 240） |
-| 中央六边形 + 红色机甲 + 巨大挡位字母 | `.core`（绝对居中）+ `emblem.js` + `.core__readout` |
+| 中央六边形 + 红色机甲 + 巨大挡位字母 | `.core`（绝对居中）+ `.core__readout`；机甲图案：`A / C / E / F` 用 `config.vehicle.gearArt` 的挡位图，其余挡位用 `emblem.js` 的原创徽记（第 10 轮） |
 | 中央六边形内的挡位铭牌 | `.core__gear`（换挡时整个六边形心跳一次） |
 | 六边形左下斜边的 `ODO 11971 km` | `.core__odo` |
 | 六边形右下斜边的龙头锁 `OFF`（红） | `.core__lock` + `i-steerlock` |
@@ -262,14 +318,22 @@ NERV 心跳、功率/温度跟随），**换挡时额外来一次心跳**，告�
 ## 7. 工程结构（Vue 3 + Vite）
 
 ```
-src/config.js            数据（阈值 / 配色 / 文案 / 芯片清单）
+src/config.js            数据（阈值 / 配色 / 文案 / 芯片清单 / gearArt 挡位图）
    ↓
-src/core/*.js            纯逻辑：create / update / autoDrive / warnings（完全不碰 DOM）
+src/core/*.js            纯逻辑：create / update / autoDrive / warnings
+                         （+ 第 9 轮的 tire / messages / nav / media / ble / settings / store，
+                            + 第 10 轮的 artslot 复用（挡位图按名字解析），完全不碰 DOM）
    ↓
-src/composables/useHud.js  每帧推进逻辑 + 生成「显示快照」（reactive）
+src/router.js            应用页路由表（vue-router 4 · hash 模式；PAGE_IDS = config.rail 的 id）
+   ↓
+src/composables/useHud.js  每帧推进逻辑 + 生成「显示快照」（reactive）；page = 路由 name 的 computed
+   ↓
+src/App.vue              <RouterView> + <KeepAlive>：页面层 `.pages` 常驻实底（转场不闪 home）
    ↓
 src/components/*.vue     只读快照，负责画
 ```
+
+> 运行时依赖两个：`vue` 与 `vue-router`（第 10 轮加的路由）。`tools/*.js` 仍是零依赖纯 Node。
 
 **样式分工（v4 起，按 Vue 的惯例）** —— 这条是硬约束，别再往回写：
 
@@ -279,7 +343,8 @@ src/styles/base.css      唯一的公共表：设计令牌 + 基础重置 + 舞�
 src/components/*.vue     每个组件自己的样式写在自己的 <style scoped> 里
                          （TopBar / LeftRail / TimeDial / CoreHex / PowerGauge /
                            BottomBar / WarningBanner / HelpPanel / BootOverlay /
-                           ControlPanel / App.vue）
+                           ControlPanel / AppPage / MsgCenter / NavPage / NervPage /
+                           MediaPage / SettingsPage / App.vue）
 ```
 
 * 判断标准只有一句：**只被一个组件用的 → 写在那个组件里；被 ≥2 个组件用的 → 才进 base.css。**
@@ -312,9 +377,76 @@ src/components/*.vue     每个组件自己的样式写在自己的 <style scope
 
 ---
 
-## 8. 改版记录（八轮都照着实车照片 / 使用反馈逐条改）
+## 8. 改版记录（十二轮都照着实车照片 / 使用反馈逐条改）
 
-### 第八轮（本次）
+### 第十二轮（本次）
+
+| # | 反馈 | 实现 |
+| --- | --- | --- |
+| 1 | 功率上限太小 → **10kW**；功率加大、加速要快、**能破百往上** | `config.vehicle.gears` 重排为 **A/E/C/F**：F `powerCap` **10000** / `maxSpeed` **120** / `accel` **5.2**。功率表量程仍然「从挡位表算」（最大 `powerCap` 取整到 200 → **10000W = 满量程 10kW**，`gauges.js` 的算法一行没改），刻度 32 格 → **40 格（250W/格）**。`brakePower` 3.4 → **6.5**、`coastDrag` 0.5 → **0.9**；演示油门增益 0.085 → **0.16**，段落重排（转向灯 40% / **直线加速 18%** / 换挡 14% / 市区 14% / 灯光音源），起步挡 X1 → **C**。⚠ `thermal.heatGain` 1.10 → **0.30**：量程提了 6 倍，不降升温系数就会几秒烧到 160℃ 顶死 |
+| 2 | 换挡改用键盘：**`A` = A 挡、`C` = C 挡**；`X1`/`X2` 不考虑 | `core/input.js` 的 `GEAR_KEYS` 由 `1~6` 换成 **`a` `e` `c` `f` + `p`**；`X1`/`X2` 从 `gearOrder`/`gears` 移除。让位的三个键：转向（原 `A`/`F`）→ **方向键**，定速巡航（原 `C`）→ **`R`**。帮助浮层同步，`check.js` 静态盯住键表 / 帮助文案 / 残留数字键 |
+| 3 | **切换挡位时中间的图有概率消失** | ① 去掉 `<Transition mode="out-in">`（leave 被打断时容器会停在没有 enter 的中间态 = DOM 空一拍）；② 换 `src` 的 `<img>` 是**新元素**，1.3MB 的 `gear-a.png` 解码完之前是透明的。现在 `CoreHex.vue` 用**两层图层**：当前层**无动画常显**（`#v-gear-art` / `#v-emblem` / `#v-gear-veil` 都在这一层）、旧层（`.core__layer--out`）盖在上面 `gearFadeOut` 淡出，由**定时器**（`config.strip.fadeMs` 320ms）摘掉 —— 不等 `transitionend`（虚拟时间下不可靠）；`onMounted` 里把四张挡位图 `new Image()` **预解码**。顺带把 `gearArt.veil` 真的画出来（第十一轮那条「配了没画」的 warn 清掉） |
+| 4 | `←`/`→` 转向、`↑`/`↓` 加减速、**左右一起按 = 双闪** | `input.js` 转向改成**电平**语义（`wantL`/`wantR` → `wantHaz = wantL && wantR`），并且**只在状态变化时发一次 `cmd`**（每帧都发会把 `turnSince`/`turnDist` 清零 → `turnAuto` 的单边自动回位失效）。`↑`/`↓` 与 `W`/`S` 同源。另外把「还按着键」也算进「人工操作中」：长按 `↑` 不会被演示抢走控制权 |
+| 5 | 氛围灯带要跟驾驶状态：氮气**紫闪** / 加速**蓝常亮** / 减速**绿常亮** / 故障**红闪** / 静止**淡青** / 驻车**黄** | 新状态机 `core/state.js → stripMode(v)`，优先级 **fault > boost > accel > brake > park > idle**；阈值进 `config.strip`（`burnRatio` 与 NOS 消耗共用 —— 原来 `0.72` 是 `update()` 里的裸常量）；快照加 `view.strip`，`App.vue` 挂 `is-<状态>`，颜色 / 闪烁在 `base.css`（每态 `--sc/--sh/--sd` 三个令牌，常亮 = `animation: none`，闪烁 = `steps(1,end)`）。`prefers-reduced-motion` 里补上 `.strip.is-*`（优先级比 `.strip` 高，只写 `.strip` 压不住） |
+| 6 | `gearchip__dual` 那块地方是**挡位**，不是「双电 / 三电模式」 | 删掉 `config.brand.dualMode`（注释里写明不要再加回来）；右上角徽标第二行改成 `view.gearShort`（`#v-gear-code`：P/A/E/C/F），和第一行挡位名组成完整挡位铭牌。`check.js` 盯住「`#v-gear-code` ← `view.gearShort`」与「config 里不许再出现 `dualMode`」 |
+
+**测试契约**：`check.js` 第 12 节 —— 10kW（F 的 `powerCap === 10000`、`maxSpeed > 100`、量程算出来必须是 10000）、挡位表 `AECF`、键盘（`GEAR_KEYS` 正好 a/e/c/f/p、无 `1~6 → X1/X2` 残留、`←/→` + `wantHaz`、`↑/↓` 接进油门、`anyDown` 长按不失权）、灯带六态（六条规则 + 主色 + 动画名 + 六色互不重复 + reduced-motion + `stripMode` 的优先级顺序串）、中央立绘（剥掉注释后模板里**不许再有 `<Transition>`**、必须有 `.core__layer--out`/`gearFadeOut`/`prevTimer`/`new Image()`、当前层不许挂动画、`#v-gear-veil` 必须存在）、徽标第二行 = 挡位代号、帮助浮层是新键且不含旧键。`smoke.js`：**核心仿真 +12 条**（真物理：F 挡峰值 112.6km/h > 100、0→100 < 12s、0→60 < 5s、峰值 9370W > 9000、`stripMode` 六态与优先级、满油门先蓝后紫）；**渲染 +26 条**（灯带真类名 + 常亮 + 蓝色；一次注入六个类名验 base.css 解出来的颜色/动画；**`?gearburst=12` 跨帧连按换挡 → `empty === 0`**、图层数 1~2、最后 1 层且有孩子、图 = 当前挡位那张、层/图 opacity 1/0.95、veil 0.42、裁切区 470×440；演示跑 9s 后中央依然可见；**新键表键盘链路 5 条** —— 按 `A` 挂 A 挡 / 按住 `←` 左转向 / 挂挡后灯带转淡青 / `←`+`→` = 双闪且单边让位 / 按 `R` 定速；⚠ 探针里 rAF 不推进，这 5 条用 `EVA_HUD.dispatch()` 消费指令队列，断言看状态）。check 163 → **190**，smoke 248 → **290**。
+
+**诊断开关 `?gearburst=N`**（`useHud.js`，与 `?photo=` / `?panel=1` / `?probe=1` 同类，默认不跑）：每 220ms 换一次挡、换 N 次，并在**每次换挡的下一帧**检查「中央那一层还有没有孩子」，把 `{times, done, empty, min, max}` 记进 `window.__gearburst`。做它的原因：`probe.html` 的按键是**一次性派发**的（同一 tick 连按 6 个挡位键只换一次挡），复现不了「连按」的时序 —— 有了它，「换挡时中央不许空」这件事才有一条**跨帧**的动态证据（而不是只有静态契约）。
+
+**顺手清掉的两处旧账**：① 第十一轮那条关于 `#v-gear-veil` 的观察 —— 现在节点真的画出来了，4 条 `warn` 归零；② `smoke.js` 里「`A` 键打左转向」这类文案（键位已变）以及 `shot.js` / 出图文档里所有 `gear:X1` / `gear:X2` / `1800W` 的遗留（挡位表里已经没有 X1/X2，写进去只会命中 `gearDef()` 的兜底分支）。
+
+### 第十一轮
+
+| # | 反馈 | 实现 |
+| --- | --- | --- |
+| 1 | 刷新页面后应该回到 **`/#/`** | `router.js`：`isReload()` 读 `performance.getEntriesByType('navigation')[0].type === 'reload'`；`bootPath()` 三条分支 —— ① `?page=`（出图 / 冒烟 / 文档）永远优先，② 地址栏 `#/msg` 深链只在**不是刷新**时直达，③ 其余（没写 hash / 不认识 / 刷新）→ `'/'`，由 `main.js` 在 mount 前 `router.replace()` 落定 → 首帧即仪表本体、地址栏稳定 `…/#/`。读不到 Navigation Timing 时按「不是刷新」处理（宁可留深链，不误伤新打开） |
+| 2 | 播放器要滚一下才看得到操作条 | `AppPage` 新增 **`fit`**（→ `.page--fit`，`base.css`：`.page.page--fit .page__body { overflow: hidden; scrollbar-gutter: auto }`）；`MediaPage` 用 flex 自己分高度：左列卡片撑满 → `.playerwrap > .player` 吃掉富余高度（**去掉 16:9 定高**）、`#media-bar` / 进度条 / 音量条固定在下方；右列「来源 / 列表（内部滚）/ 支持清单」。⚠ 画面盒类名从 `.stage` 改成 `.player*`：`base.css` 里 `.stage` 是 HUD 缩放舞台（1300×760 + `transform`），撞名会把画面盒按舞台尺寸撑开、把操作条压在底下 |
+| 3 | 控制台报 `<path> d` / `<circle> cx` 的 **NaN** | `gauges.js` 的量程读错了键：`CONFIG.vehicle.modes`（不存在）→ `powerMax = 0` → 0W 时 `0/0 = NaN` 写进 `<path d>` / `<circle cx cy>`；有功率时 `x/0 = Infinity` → `pct` 恒为 1、**数值弧永远画满**（不报错的静默故障）。改：读 `CONFIG.vehicle.gears`（X2 最高 1800W → 量程 1800）、`powerMax > 0` 兜底、进 SVG 的数字统一走 `num()` / `f2()`（NaN / undefined 当 0）。780W → 253°，0W → 140° 且游标隐藏 |
+
+**测试契约**：`check.js` 第 11 节（功率量程的键与兜底、`fit` / `.page--fit` / `.player*` 的类名契约、`isReload()` + `bootPath()` 分支齐全且 `smoke.js` 里有对应断言）；`smoke.js` 新增 12 条：功率表量程、功率弧无 NaN、780W 停在 253°、有功率时游标可见、0W 停在 140° 且游标隐藏、正文区 `overflow: hidden`、内容不超出可视高度、操作条在可视区内、画面盒不溢出槽位、手打 `#/set` 直达、**真刷新一次**后回仪表本体且地址栏为 `#/`（`probe.html` 新增 `reload=` / `reloadHash=`：同文档切到 `#/set` → `location.reload()` → 等 load 再量）、**探针总账**（`missProbes` 为空，无头浏览器偶发不吐 title 会自动重试一次，两次都空报 FAIL）。check 153 → **163**，smoke 241 → **248**。
+
+**顺手清掉的旧伤**：① `smoke.js` 里对 `#v-gear-code` 的断言（该元素早已在 `TopBar.vue` 里停用 → id 契约一直是红的）；② 「车速在动」这条**随机假 FAIL**（断言第 900 帧的瞬时车速，而 `autoDrive` 用 `Math.random` → 改成看 15s 内峰值车速）；③ 「划入方向相反」原来读**当帧** `transform`（动画跑完就是 `0.0 / 0.0`）→ 改成读**动画第一帧**（`getAnimations()` 的 keyframes，与时间无关）。
+⚠ 另一处观察：`CoreHex.vue` 在 16:57 被改掉了暗幕节点（`#v-gear-veil`），而 `config.vehicle.gearArt.veil = .42` 还留着 → `smoke` 每次会打 4 条 `warn`（配了没画）。要么补回节点、要么把配置里的 `veil` 去掉 + 同步本文档与 README 里关于暗幕的描述。
+
+### 第十轮
+
+| # | 反馈 | 实现 |
+| --- | --- | --- |
+| 1 | 界面切换接 **vue-router**，而且要**保活** | `src/router.js`：hash 模式（要能双击 `dist/index.html` 在 `file://` 下跑，history 模式需要服务端回退）+ 一条条写明的路由表 + `PAGE_IDS = config.rail`；`App.vue` 用 `<RouterView v-slot>` + `<KeepAlive>`；`useHud.page` = 路由 `name` 的 computed（`EVA_HUD.page.value` 行为不变 → 左灯塔高亮 / `Esc` / `?page=` 全不受影响）；`?page=` 在 mount 前被 `bootPath()` 翻译成路由地址 → 出图 / 冒烟首帧就停对地方。⚠ 「再点一次关掉」用 `target`（最近一次请求的目标）+ `router.afterEach`，**不能读 `page.value`**（路由异步，连点两个芯片会误判） |
+| 2 | 导航 → 消息中心**闪一下 home** | 根因：旧页 `v-if` 卸载 + 新页 `pageIn` 从 `opacity: 0` 淡入 → 中间那几帧露出的就是下面的仪表本体。改成**常驻实底** `.pages`（渐变底色与 `--page-z` 从 `.page` 挪过来）+ `pageSw` **交叉淡入**（两页同时在场、`absolute` 互相重叠）；`.pages.is-off` 负责「没开页面」的隐藏与不吃点击 |
+| 3 | 设置页纵向滚动太长 | 左栏 5 个六边形芯片分节（复用首页灯塔的 `.hexchip` / `.chipbg`），右栏只渲染当前这一节；`config.pages.set.body` 1000 → 1120；BMS 那一节内部再分两列；每节按 ≈540px 排过版 → **整页不滚动**；`?sec=bms` 可直达某一节 |
+| 4 | 消息中心的胎温胎压挪到设置那边 | 整块读数（`.tlive`：两轮 kPa / bar / ℃ + 细进度条）搬进「胎压胎温」这一节的开头，并把「立刻胎压告警 / 恢复读数」两个按钮一起搬过去；消息中心只留消息列表 + 三个推送演示 |
+| 5 | 六边形的机器人图案换成 **A / C / E / F 挡位图**，但**动画要保留** | `src/assets/gear/` 的原图 → `npm run art`（`cutout.js` 新增 `gear/` 来源 + `FILE_TUNING` 给背景偏灰的 C.png 单独放低阈值）→ `art/gear-*.png`；`config.vehicle.gearArt`（`map` / `fit` / `opacity` / `blend` / `veil` / `fallbackEmblem`）→ `CoreHex.vue` 用 `core/artslot.js` 解析；形状继续由 `.core__hex` 的 `clip-path` 裁，上面压一层 `veil` 暗幕保证「时速 / P」读得清；`P / X1 / X2` 回落原创机甲徽记。**心跳动画一行没动**（`.core.is-beat → coreBeat`），图案另做 `gearSw` 交叉淡入 |
+
+**这一轮的测试契约**：`check.js` 第 10 节 —— 路由契约（`config.rail` 每个 id 都有路由、每条路由的组件都 import 了、`App.vue` 必须有 `<KeepAlive>`）、转场契约（`.pages` 实底 / `.is-off` / `pageSw` 的 transition 与进入帧、`pageSw-*` 不许进 scoped 块）、**换挡心跳与挡位图接线**（`coreBeat` 还在、心跳挂在 `view.gear` 上、`CoreHex` 真的接了 `gearArt` + `resolveArt`）、`gearArt.map` 的预留位校验（对得上 `art/` 里的图 + 必须带 alpha）；`smoke.js` 每页把「有入场动画 / 页面自己实底」换成「**压在常驻实底 `.pages` 上** / **由路由给出来**」，并新增交叉淡入（`pageSw-enter` 与 `pageSw-leave` 同时在场）、关闭后 `.pages.is-off`、**保活两条**、挡位图 6 条、设置分节 5 条、消息中心不再画胎压。check 136 → **153**，smoke 213 → **241**。
+
+**这一轮踩的坑**：① 路由是异步的（见上表第 1 行的 `target`）；② 探针环境里**连 CSS 过渡也停在第一帧**（以前只知道动画会停）—— 好处是「`.page` 上挂着 `pageSw-enter-from`」反倒成了可断言的转场证据，坏处是「读当帧 `opacity` 判断可见性」一律不成立（可见性改看 `.pages` 有实底）；③ `probe.html` 的 `js=` 表达式之间用 `|` 分隔 → 表达式里写 `||` 会被切断（用三元表达式，别用 `||`）。
+
+### 第九轮
+
+| # | 反馈 | 处理 |
+| --- | --- | --- |
+| 1 | 左灯塔五个芯片只有「设置」能开弹框，其余四个是死的 | 新增 `AppPage.vue` **页面外壳** + 五个页面组件：外壳统一「六边形芯片标 + 中文标题 + 拉丁副标题 + hint + `#actions` 插槽 + 状态读数 + ✕ + 五个页签」，正文宽度按 `config.pages[id].body` 居中收窄；`App.vue` 用 `v-if` **同一时刻只挂一页** → 关掉页面时 HUD 的 DOM 与第九轮之前完全一致 |
+| 2 | 页面层要压在仪表上、又不能压住告警 | `base.css` 新增「应用页框架」一节：`--page-z: 6`（仪表本体 2 < 页面 6 < 告警横幅 8 < 操作弹框 20）、`.page` 用 radial-gradient **实底**（不透出仪表）+ `pageIn .2s` 入场；公共零件 `.card / .btn / .seg / .tgl / .fld / .sld / .meter / .kv / .tag / .note / .plist` 也在这里，各页自己的排版仍在自己的 `<style scoped>`（判断标准不变） |
+| 3 | 芯片的「亮着」和「这页开着」在视觉上要能分开 | `LeftRail.vue` 拆成两套类：`is-on`（状态点亮：告警 / 行驶 / 播放 / 帮助）与 `is-open`（页面开着：底色换琥珀描边）；消息芯片角标从写死的 `1` 改成**未读数**（最多 99，没有未读但正在告警时兜底显示 1） |
+| 4 | 五个页面各自要干什么 | ① 消息中心 `core/messages.js`（四条来源 / 同 key 去重 / 未读计数）；② 导航 `core/nav.js`（三家 × 四种出行模式归一化，**直线估算兜底并明确标注**，开始导航按实时车速推进）；③ NERV 只留占位（说了暂时不做）；④ 媒体播放器 `core/media.js`（File System Access API + 白名单 / `canPlayType` 两道过滤 + Object URL 懒创建）；⑤ 设置 `core/tire.js` / `settings.js` / `store.js` / `ble.js`（胎压阈值即时参与裁决、改完存 localStorage、BMS 是可选骨架） |
+| 5 | （顺手补的两处） | ① `check.js` 新增第 9 节「**组件引用契约**」；② 徽记那两条「读当帧值」的假 FAIL 断言改成立绘那套做法（配置值读 `--mark-o`、几何除掉当帧 `transform` 的缩放），并在 `check.js` 里静态盯「`markIn` 的 `to` 帧不许写 `opacity`」 |
+
+**⚠️ 本轮最大的坑**：`<AppPage>` 忘了 `import` → Vue 退化成运行期 `resolveComponent()`，
+**生产构建连警告都没有**，整页静默渲染成空；而当时 `check` / `build` / `smoke` 全绿。
+这跟第六轮「JS 生成的节点必须 `:deep()`」、第五轮「通配选择器压过子元素定位」是同一类
+**安静故障**：DOM 在、样式 / 内容没来。所以「第 9 节静态契约」+「每页渲染出自己的正文」
+两条防线都留着；诊断手段也记一笔：`tools/probe.html` + `chrome --dump-dom` 量页面层
+（`?photo=<非空>&page=msg` 可以跳过开机动画直达某个页面）。
+
+**测试上的老坑又踩了一次**：探针环境里 CSS 动画停在第一帧，所以**任何「读当帧 `opacity` /
+`rect`」的断言都不成立**。立绘（`bootArtIn`）当初就改成「读内层 `--art-o` + 把当帧
+`transform` 位移减掉」，这一轮徽记（`markIn`，`from { scale(.88); opacity: .2 }`）的两条
+断言忘了照做，量出来永远是 `.2` 和 0.88 倍。改成同一套做法后，它们才是真正的
+「配置 → CSS 变量 → 观感」契约，而不是假 FAIL。
+
+### 第八轮
 
 | # | 反馈 | 处理 |
 | --- | --- | --- |
@@ -480,5 +612,27 @@ src/components/*.vue     每个组件自己的样式写在自己的 <style scope
   用于让指针动得合理，不是标定模型。
 * NERV 图标按用户提供的 `prototype/nerv.jfif` 重画成 24×24 剪影（半片叶子 + 斜叶柄 +
   `NE / RV` 两行字母），只是**示意性简化**，不是官方矢量文件。
+* **地图三家的 key / CORS 是「跑不通也能用」的那一处**：高德 WebService 支持跨域直连，
+  百度 / 腾讯多数端点要 JSONP 或自建 `proxy` 转发；key 留空 / 被拦 / 结构不认识时一律退到
+  **直线估算**并明确标出来，绝不假装是真实路线。真机联调要自己填 key（`config.apps.nav.keys`）。
+* **BMS 的 UUID 与字段偏移没有实机校验**（手上没有保护板）：`core/ble.js` 把它们全收在
+  `BOARDS` 一张表里，实机抓包后只改一处；JK / ANT 目前只记录原始帧。另外 Web Bluetooth 只在
+  Chromium + **安全上下文**（`file://` / `localhost` / `https://`）里存在，`http://192.168.x.x`
+  会被整体禁用 —— 所以设置页里那张「环境自检」卡片会把结论和原因直接写出来。
+* **媒体只加载浏览器真的能播的格式**（白名单扩展名 + `canPlayType`），`.mkv / .avi / .wmv`
+  这类故意不在白名单里；不支持 File System Access 的内核退回 `<input type="file">`
+  （功能一样，少了「记住上次那个文件夹」）。
+* **NERV 页是空占位**（使用者明确说暂时不做）：不留死链、也不假装有功能，
+  想好了往 `NervPage.vue` 里加。
+* **保活与路由的代价**：第 10 轮为「切页不卸载」引入了 `vue-router`（运行时第二个依赖）与
+  `<KeepAlive>` —— 访问过的页面实例会一直活着（内存换体验）。本项目只有 5 个页面、每页都是
+  纯前端状态，代价可以接受；真要回收就加 `:max` 或 `:include`。hash 模式是**为了 `file://`**
+  （双击 `dist/index.html` 就能跑）—— 如果以后挂到服务器上想要干净路径，换 `createWebHistory`
+  即可，路由表本身不用动。
+* **挡位图（A / C / E / F）是使用者放进 `src/assets/gear/` 的素材**（和自检页立绘同一条提醒：
+  要公开分发请按素材本身的授权确认）。`P` 没有对应图 → 回落原创机甲徽记；
+  `config.vehicle.gearArt.enabled = false` 就完全不显示图。⚠ C.png 的背景不是纯白（180~235 的
+  浅蓝灰），`cutout.js` 默认的种子阈值抠不动它，所以 `FILE_TUNING` 里给这一张单独放低了
+  `seed / floor / sat`；换图时若发现「整块背景没被抠掉」，先 `--dry --map` 看一眼背景亮度。
 * 后续可做：多语言、深浅主题切换、WebSocket 数据源适配器、
   关键帧截图回归测试（`tools/shot.js` 已经打好底子）。

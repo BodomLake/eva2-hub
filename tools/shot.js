@@ -27,9 +27,10 @@ import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/* 内置姿态：字段名与 state.js 完全一致（?photo= 参数的语法） */
+/* 内置姿态：字段名与 state.js 完全一致（?photo= 参数的语法）
+   ⚠ 挡位只用 A / E / C / F（X1 新国标 / X2 新国飚已暂停用；功率表满量程 = F 的 10kW） */
 const POSES = {
-  cruise: 'speed:35,power:780,gear:X1,soc:51,auxSoc:100,odo:11971,' +
+  cruise: 'speed:35,power:780,gear:C,soc:51,auxSoc:100,odo:11971,' +
           'rideSec:3498,tripKm:28.1,rangeFull:145,rangeKm:74,nos:100,' +
           'motorTemp:116,ambient:35,lamp.beamLow:1,lamp.cruise:1,lamp.regen:1,lamp.turnR:1',
   park: '',
@@ -43,17 +44,18 @@ const POSES = {
         'rideSec:6120,tripKm:52.7,rangeFull:118.9,rangeKm:92.7,nos:46,' +
         'motorTemp:138,lamp.beamHigh:1,lamp.cruise:1',
   /* 转向灯演示三连：左转 / 右转 / 双闪（转向灯就在 READY 铭牌左右两侧） */
-  left: 'turn:left,gear:X1,speed:19,power:430,soc:51,auxSoc:100,odo:11971,' +
+  left: 'turn:left,gear:C,speed:19,power:430,soc:51,auxSoc:100,odo:11971,' +
         'rideSec:3498,tripKm:28.1,rangeFull:145,rangeKm:74,nos:96,' +
         'motorTemp:104,lamp.beamLow:1,lamp.cruise:1',
-  right: 'turn:right,gear:X1,speed:21,power:470,soc:51,auxSoc:100,odo:11971,' +
+  right: 'turn:right,gear:C,speed:21,power:470,soc:51,auxSoc:100,odo:11971,' +
          'rideSec:3498,tripKm:28.1,rangeFull:145,rangeKm:74,nos:96,' +
          'motorTemp:104,lamp.beamLow:1,lamp.cruise:1',
-  haz: 'turn:hazard,gear:X1,speed:0,power:0,soc:51,auxSoc:100,odo:11971,' +
+  haz: 'turn:hazard,gear:C,speed:0,power:0,soc:51,auxSoc:100,odo:11971,' +
        'rideSec:3498,tripKm:28.1,rangeFull:145,rangeKm:74,nos:96,' +
        'motorTemp:88,lamp.beamLow:1',
-  /* 四位数功率：看数值牌自动降字号（不会突出圆环） */
-  bigpower: 'gear:X2,speed:48,power:1800,soc:72,auxSoc:100,odo:11971,' +
+  /* 五位数功率 + 烧氮气：数值牌自动降字号（不突出圆环），
+     光带这时是紫色闪烁（功率 > 挡位上限 × config.strip.burnRatio） */
+  bigpower: 'gear:F,speed:118,power:9400,throttle:.95,soc:72,auxSoc:100,odo:11971,' +
             'rideSec:6120,tripKm:44.2,rangeFull:113.1,rangeKm:81.4,nos:38,' +
             'motorTemp:132,lamp.beamHigh:1,lamp.cruise:1',
   off: 'powered:false,gear:P,speed:0,power:0'

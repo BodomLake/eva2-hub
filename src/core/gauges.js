@@ -4,8 +4,11 @@
  * 用 SVG 而不是 Canvas 的原因：矢量在任何缩放下都锐利，
  * 且发光/渐变可直接复用 CSS，改配色只需动 config.js。
  *
- * 纯 ESM：由 PowerGauge.vue / NosBar.vue 在 onMounted 里构建，
- * 之后每帧由 useVehicle 的 frame hook 直接写 SVG 属性（60fps 通道）。
+ * 纯 ESM：由 PowerGauge.vue / BottomBar.vue 在 onMounted 里构建，
+ * 之后每帧由 useHud 的 registerFrame() 通道直接写 SVG 属性（60fps 通道）。
+ *
+ * ⚠ 写进 SVG 的每个数字都过 num() / f2() 兜底：外部数据给 NaN 时只是「弧没动」，
+ *   不会在控制台刷 <path> d / <circle> cx 的 NaN 报错，也不会把弧画满。
  */
 import { CONFIG, clamp } from '../config.js';
 
@@ -23,18 +26,31 @@ const NS = 'http://www.w3.org/2000/svg';
     return n;
   }
 
+  /* 数字兜底：外部数据源（CAN / BLE / 手改 EVA_HUD.vehicle.xxx）可能是
+     undefined / NaN / 字符串。NaN 一旦写进 SVG 属性，浏览器只在控制台念一句
+     `Error: <path> attribute d: Expected number, "…14 A92 92 0 0 1 NaN NaN"`、
+     `Error: <circle> attribute cx: Expected length, "NaN"`，画面上只是「那条弧
+     没画出来」—— 很难跟「数据没来」区分。所以进 SVG 的数字全部过这里。 */
+  function num(v, d) {
+    var n = Number(v);
+    return isFinite(n) ? n : d;
+  }
+  function f2(v) { return num(v, 0).toFixed(2); }
+
   function polar(cx, cy, r, deg) {
-    var a = deg * Math.PI / 180;
-    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    var a = num(deg, 0) * Math.PI / 180;
+    return [num(cx, 0) + num(r, 0) * Math.cos(a), num(cy, 0) + num(r, 0) * Math.sin(a)];
   }
 
   function arcPath(cx, cy, r, a0, a1) {
+    a0 = num(a0, 0);
+    a1 = num(a1, a0);
     var p0 = polar(cx, cy, r, a0);
     var p1 = polar(cx, cy, r, a1);
     var large = Math.abs(a1 - a0) > 180 ? 1 : 0;
-    return 'M' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) +
-           ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' +
-           p1[0].toFixed(2) + ' ' + p1[1].toFixed(2);
+    return 'M' + f2(p0[0]) + ' ' + f2(p0[1]) +
+           ' A' + f2(r) + ' ' + f2(r) + ' 0 ' + large + ' 1 ' +
+           f2(p1[0]) + ' ' + f2(p1[1]);
   }
 
   /* ============================================================
@@ -48,12 +64,23 @@ const NS = 'http://www.w3.org/2000/svg';
     var RARC = 92;                  // 数值弧半径
     var A0 = 140, A1 = 400, SPAN = A1 - A0;
 
+    /* 量程 = 骑行挡位里最大的 powerCap 向上取整到 200（当前 F 挡 10000 → 满量程 10kW）。
+       ⚠ 量程取自 **CONFIG.vehicle.gears**。这里曾经写错成 CONFIG.vehicle.modes
+       （那个键不存在）→ powerMax = 0，于是：
+         · 0W 时 Math.abs(0) / 0 = NaN → 数值弧写成 "…A92 92 0 0 1 NaN NaN"，
+           浏览器在控制台刷 `<path> d` / `<circle> cx/cy` 三条 NaN 报错；
+         · 有功率时 x / 0 = Infinity → pct 恒等于 1，**数值弧永远画满**（不报错，
+           只是看着像「功率爆表」，最难发现的那种。
+       所以除了改对键名，下面还留了两个兜底：拿不到数字就不算、量程为 0 时给个默认值。 */
     var powerMax = 0;
-    var modes = CONFIG.vehicle.modes;
-    for (var mk in modes) {
-      if (modes[mk].powerCap > powerMax) powerMax = modes[mk].powerCap;
+    var gears = CONFIG.vehicle.gears || {};
+    for (var mk in gears) {
+      if (!Object.prototype.hasOwnProperty.call(gears, mk)) continue;
+      var cap = Number(gears[mk] && gears[mk].powerCap);
+      if (isFinite(cap) && cap > powerMax) powerMax = cap;
     }
-    powerMax = Math.ceil(powerMax / 200) * 200;      // 例如 1600
+    powerMax = Math.ceil(powerMax / 200) * 200;
+    if (!(powerMax > 0)) powerMax = 1200;            // 配置读不到也不让分母变成 0
 
     svg.innerHTML = '';
     var defs = el('defs', null, svg);
@@ -84,7 +111,7 @@ const NS = 'http://www.w3.org/2000/svg';
     /* 背景刻度弧 + 数值弧的底槽 */
     el('path', { class: 'g-ring-bg', d: arcPath(cx, cy, RARC, A0, A1) }, svg);
 
-    var STEPS = 32;                                   // 每格 50W
+    var STEPS = 40;                                   // 每格 250W（10kW 量程 → 40 格）
     var i, deg;
     for (i = 0; i <= STEPS; i++) {
       deg = A0 + SPAN * i / STEPS;
@@ -118,17 +145,18 @@ const NS = 'http://www.w3.org/2000/svg';
       max: powerMax,
       /* value: W（可为负）；返回归一化比例 */
       set: function (value) {
-        var pct = Math.min(1, Math.abs(value) / powerMax);
+        var w = num(value, 0);                    // NaN / undefined → 当 0，绝不画 NaN 弧
+        var pct = Math.min(1, Math.abs(w) / powerMax);
         if (Math.abs(pct - lastPct) < 0.002) return pct;
         lastPct = pct;
         var deg = A0 + SPAN * pct;
         valueArc.setAttribute('d', arcPath(cx, cy, RARC, A0, deg));
-        valueArc.setAttribute('stroke', value < 0 ? 'url(#pgRegen)' : 'url(#pgArc)');
+        valueArc.setAttribute('stroke', w < 0 ? 'url(#pgRegen)' : 'url(#pgArc)');
         var p = polar(cx, cy, RARC, deg);
-        dot.setAttribute('cx', p[0].toFixed(2));
-        dot.setAttribute('cy', p[1].toFixed(2));
+        dot.setAttribute('cx', f2(p[0]));
+        dot.setAttribute('cy', f2(p[1]));
         dot.setAttribute('opacity', pct > 0.01 ? 1 : 0);
-        dot.setAttribute('fill', value < 0 ? '#7dffb8' : '#fff');
+        dot.setAttribute('fill', w < 0 ? '#7dffb8' : '#fff');
         return pct;
       }
     };

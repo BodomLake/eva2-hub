@@ -65,10 +65,11 @@ const gears = computed(function () {
 
 function setGear(code) { act({ gear: code }); }
 
-/* 想动起来但还挂在 P 挡时：自动切回上次的骑行挡位（或 X1） */
+/* 想动起来但还挂在 P 挡时：自动切回上次的骑行挡位（没有就退到挡位表第一个） */
 function ensureRide(prefer) {
   if (vehicle.gear !== C.vehicle.parkGear) return;
-  const last = C.vehicle.gearOrder.indexOf(vehicle.gearLast) >= 0 ? vehicle.gearLast : 'X1';
+  const last = C.vehicle.gearOrder.indexOf(vehicle.gearLast) >= 0
+    ? vehicle.gearLast : C.vehicle.gearOrder[0];
   act({ gear: prefer || last });
 }
 
@@ -96,7 +97,10 @@ function hardAccel() {
   ensureRide('F');
   const ride = vehicle.gear === C.vehicle.parkGear ? vehicle.gearLast : vehicle.gear;
   const def = C.vehicle.gears[ride];
-  if (!def || def.powerCap < 1500) act({ gear: 'F' });
+  /* 不在最高功率的挡位上就先切过去（把上限从 config 读出来，别写死 1500：
+     功率表满量程 10kW 之后，C 挡的 3200W 也算「不够猛」） */
+  const maxCap = C.vehicle.gears[C.vehicle.gearOrder[C.vehicle.gearOrder.length - 1]].powerCap;
+  if (!def || def.powerCap < maxCap) act({ gear: 'F' });
   hold(1, 2600);
   refresh();
 }

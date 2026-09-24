@@ -13,16 +13,19 @@ const { helpOpen } = useHudContext();
   <div v-if="helpOpen" class="help" id="help">
     <h4>按键控制 <small>CONTROL</small></h4>
     <ul>
-      <li><kbd>W</kbd>/<kbd>↑</kbd> 加速 · <kbd>S</kbd>/<kbd>↓</kbd> 制动（触发能量回收） · <kbd>空格</kbd> 松油门</li>
-      <li><kbd>P</kbd> 驻车 P 挡（参考图正中那个大字 P）</li>
-      <li><kbd>1</kbd>~<kbd>6</kbd> 骑行挡位：A 助力推行 / E 经济 / C 滑行 / F 激烈 / X1 新国标 / X2 新国飚</li>
-      <li><kbd>G</kbd> 换下一挡位（中央六边形会做一次心跳缩放）</li>
-      <li><kbd>A</kbd> 左转向 · <kbd>F</kbd> 右转向 · <kbd>H</kbd> 双闪 · <kbd>L</kbd> 大灯 · <kbd>K</kbd> 龙头锁（OFF / ON）</li>
-      <li><kbd>C</kbd> 定速巡航 · <kbd>B</kbd> 蓝牙 · <kbd>U</kbd> USB 供电 · <kbd>Y</kbd> 手机音源</li>
+      <li><kbd>↑</kbd>/<kbd>W</kbd> 加速 · <kbd>↓</kbd>/<kbd>S</kbd> 制动（触发能量回收） · <kbd>空格</kbd> 松油门</li>
+      <li><kbd>←</kbd>/<kbd>→</kbd> 左 / 右转向（<b>按住</b>期间亮，松开就灭；两个一起按住 = <kbd>双闪</kbd>）</li>
+      <li><kbd>A</kbd><kbd>E</kbd><kbd>C</kbd><kbd>F</kbd> 骑行挡位：A 助力推行 / E 经济 / C 滑行 / F 激烈（按下即换挡）</li>
+      <li><kbd>P</kbd> 驻车 P 挡（参考图正中那个大字 P） · <kbd>G</kbd> 换下一挡位（中央六边形心跳一次）</li>
+      <li><kbd>H</kbd> 双闪 · <kbd>L</kbd> 大灯 · <kbd>K</kbd> 龙头锁（OFF / ON） · <kbd>R</kbd> 定速巡航 · <kbd>B</kbd> 蓝牙 · <kbd>U</kbd> USB 供电 · <kbd>Y</kbd> 手机音源</li>
       <li><kbd>X</kbd> 边撑（放下后挂挡会被拒绝并告警） · <kbd>V</kbd> 充电枪</li>
       <li><kbd>M</kbd> 自动驾驶演示 开/关 · <kbd>O</kbd> 操作弹框（点按钮设定演示内容） · <kbd>?</kbd> 显示或关闭本帮助</li>
+      <li>
+        <kbd>I</kbd> 消息中心 · <kbd>N</kbd> 导航 · <kbd>J</kbd> 媒体播放器 · <kbd>T</kbd> 设置
+        —— 也可以直接点左侧五个六边形芯片（再点一次关掉，<kbd>Esc</kbd> 逐层退出）
+      </li>
     </ul>
-    <p class="help__foot">转向灯在 READY 铭牌左右两侧 · 龙头锁上锁时无法挂挡行驶 · 松开按键 6 秒后自动恢复巡航演示 · 按 <kbd>?</kbd> 关闭</p>
+    <p class="help__foot">转向灯在 READY 铭牌左右两侧 · 两侧灯带跟着驾驶状态变色（蓝加速 / 绿回收 / 紫烧氮气 / 红故障 / 黄驻车 / 淡青静止） · 上锁或放下边撑都无法挂挡 · 松开按键 6 秒后自动恢复巡航演示（按住不放则一直由你控制） · 按 <kbd>?</kbd> 关闭</p>
   </div>
 </template>
 

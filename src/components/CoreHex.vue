@@ -4,14 +4,15 @@
  * ------------------------------------------------------------------
  * 平顶六边形：上/下两条边平行于屏幕横向（与左侧灯塔同一套比例）。
  * 一个「大字槽」承载两种语义（参考图行为）：
- *   停放（P 挡）→ 显示 P          骑行（A/E/C/F/X1/X2）→ 显示时速数字
+ *   停放（P 挡）→ 显示 P          骑行（A/E/C/F）→ 显示时速数字
  * 六边形「左下斜边」= ODO 总里程；「右下斜边」= 龙头锁（OFF 红 / ON 琥珀）；
  * 六边形内部下方 = 当前骑行挡位铭牌 —— 换挡时整个六边形做一次心跳缩放。
  * 六边形外框与机甲徽记是原创几何，由 core/emblem.js 生成（纯字符串）。
  */
-import { computed, ref, watch, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { CONFIG as C } from '../config.js';
 import { buildFrame, build as buildEmblem } from '../core/emblem.js';
+import { resolveArt } from '../core/artslot.js';
 import { useHudContext } from '../composables/useHud.js';
 
 const { view } = useHudContext();
@@ -19,6 +20,63 @@ const { view } = useHudContext();
 /* 只生成一次：外框在 <svg> 内，徽记在裁切层内 */
 const frame = buildFrame();
 const emblem = buildEmblem();
+
+/* ------------------------------------------------------------------
+ * 六边形里的图案：优先用**当前挡位的图**（config.vehicle.gearArt，A/C/E/F）
+ * 原图在 src/assets/gear/，跑过 npm run art 之后按名字解析（core/artslot.js）。
+ * 没配图的挡位（现在只有 P）→ 回落到原创机甲徽记（fallbackEmblem），
+ * 这样这几种挡位不会突然空一块。名字写错时同样回落，控制台有 warn。
+ *
+ * ⚠ 换挡不能「中间空一拍」（这里踩过一个 bug：快速连按换挡，中央的图会
+ *   有概率整个消失）。两个原因，都堵住了：
+ *     ① 以前用 <Transition mode="out-in">：它要等旧元素 leave 完才插新的，
+ *        连按换挡时 leave 被打断 → 容器停在没有 enter 的中间态（DOM 空了）；
+ *     ② <img> 换 src 是**新的元素**，大图（gear-a.png 1.3MB）解码没完成时
+ *        就是透明的 → 用户看到「图没了」。
+ *   现在的做法：两层叠着放（当前层永远在 DOM 里、不依赖任何动画），
+ *   旧层淡出后由**定时器**摘掉（定时器在虚拟时间下也会推进，比等
+ *   transitionend 可靠）；挂载时把四张挡位图预解码一遍。
+ * ------------------------------------------------------------------ */
+function layerFor(g) {
+  const ga = C.vehicle.gearArt || {};
+  if (ga.enabled === false) return { key: 'emblem-' + g, kind: 'emblem', src: '' };
+  const src = resolveArt((ga.map || {})[g]);
+  return src ? { key: 'art-' + g, kind: 'art', src: src }
+             : { key: 'emblem-' + g, kind: 'emblem', src: '' };
+}
+
+const layer = computed(function () { return layerFor(view.gear); });
+/* 正在淡出的上一层（null = 没有）；它只是「盖在上面慢慢变透明」，摘掉与否都不影响新图 */
+const prev = ref(null);
+let prevTimer = null;
+
+function dropPrev() {
+  if (prevTimer) { window.clearTimeout(prevTimer); prevTimer = null; }
+  prev.value = null;
+}
+
+/* 预解码四张挡位图：换挡瞬间就是「已经解好的图」，不会有一段空白 */
+onMounted(function () {
+  const map = (C.vehicle.gearArt || {}).map || {};
+  Object.keys(map).forEach(function (g) {
+    const src = resolveArt(map[g]);
+    if (src && window.Image) { const im = new Image(); im.src = src; }
+  });
+});
+
+const artStyle = computed(function () {
+  const ga = C.vehicle.gearArt || {};
+  return {
+    objectFit: ga.fit === 'contain' ? 'contain' : 'cover',
+    opacity: String(ga.opacity == null ? .95 : ga.opacity),
+    mixBlendMode: ga.blend === 'screen' ? 'screen' : 'normal'
+  };
+});
+/* 挡位图上的暗幕强度（config.vehicle.gearArt.veil；0 = 不压） */
+const veilStyle = computed(function () {
+  const v = Number((C.vehicle.gearArt || {}).veil);
+  return { opacity: String(isFinite(v) ? v : 0) };
+});
 
 const readoutCls = computed(function () {
   return {
@@ -30,6 +88,7 @@ const readoutCls = computed(function () {
 /* ------------------------------------------------------------------
  * 换挡心跳：先缩到 0.88 再弹回当前尺寸（一小一大，像心跳）
  * 用「下一帧再加 class」的方式保证连续换挡也每次都能重放动画。
+ * 同时把「上一层」挂出去淡出（新的那层从头到尾都在 DOM 里）。
  * ------------------------------------------------------------------ */
 const beat = ref(false);
 let beatTimer = null;
@@ -38,14 +97,22 @@ function stopBeat() {
   if (beatTimer) { window.clearTimeout(beatTimer); beatTimer = null; }
   beat.value = false;
 }
-watch(function () { return view.gear; }, function () {
+watch(function () { return view.gear; }, function (now, was) {
   stopBeat();
   window.requestAnimationFrame(function () {
     beat.value = true;
     beatTimer = window.setTimeout(function () { beat.value = false; }, 560);
   });
+
+  /* 交叉淡入：旧层淡出 —— 同一张图（比如 A → A 之外的同一层 key）就不用叠了 */
+  if (was === undefined || was === now) return;
+  const old = layerFor(was);
+  if (old.key === layerFor(now).key) return;
+  dropPrev();
+  prev.value = old;
+  prevTimer = window.setTimeout(function () { prevTimer = null; prev.value = null; }, C.strip.fadeMs);
 });
-onUnmounted(stopBeat);
+onUnmounted(function () { stopBeat(); if (prevTimer) window.clearTimeout(prevTimer); });
 </script>
 
 <template>
@@ -53,7 +120,27 @@ onUnmounted(stopBeat);
     <svg class="core__frame" id="core-frame" viewBox="0 0 470 440" aria-hidden="true" v-html="frame"></svg>
 
     <div class="core__hex" aria-hidden="true">
-      <div class="core__emblem" id="v-emblem" v-html="emblem"></div>
+      <!-- 换挡时图案交叉淡入（同时 .core 还会做一次心跳：coreBeat）
+           DOM 顺序 = [当前层, 上一层]：上一层在上面做「淡出」，下面那层
+           （当前挡位）**从头到尾都可见**，所以连按换挡也绝不会空一拍。 -->
+      <div :key="layer.key" class="core__layer">
+        <img
+          v-if="layer.kind === 'art'"
+          class="core__art" id="v-gear-art" :src="layer.src" :style="artStyle" alt=""
+        >
+        <div v-else class="core__emblem" id="v-emblem" v-html="emblem"></div>
+        <!-- 挡位图上的暗幕：压暗之后中央大字 / 挡位铭牌在任何图上都读得清 -->
+        <i v-if="layer.kind === 'art'" class="core__veil" id="v-gear-veil" :style="veilStyle"></i>
+      </div>
+
+      <div v-if="prev" :key="'out-' + prev.key" class="core__layer core__layer--out">
+        <img
+          v-if="prev.kind === 'art'"
+          class="core__art" :src="prev.src" :style="artStyle" alt=""
+        >
+        <div v-else class="core__emblem" v-html="emblem"></div>
+        <i v-if="prev.kind === 'art'" class="core__veil" :style="veilStyle"></i>
+      </div>
     </div>
 
     <!-- 中央大字：P 挡显示 P，骑行时显示时速 -->
@@ -149,6 +236,51 @@ onUnmounted(stopBeat);
   opacity: .96;
 }
 
+/* 图层：每层都铺满六边形裁切区（.core__hex 上的 clip-path 负责裁形）。
+   ⚠ 当前层不许有任何「会把它变透明」的动画 / 过渡 —— 换挡瞬间它就必须是可见的；
+   淡入淡出只做在**上一层**（core__layer--out）身上。 */
+.core__layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* 上一层：盖在当前层上面淡出，动画跑完由 CoreHex.vue 的定时器摘掉
+   （定时器在无头 / 虚拟时间下也会推进，比等 transitionend 可靠） */
+.core__layer--out {
+  animation: gearFadeOut .28s ease-in both;
+  pointer-events: none;
+}
+
+@keyframes gearFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* 挡位图（A/C/E/F）：铺满六边形裁切区 */
+.core__art {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* 挡位图上的暗幕（config.vehicle.gearArt.veil）：亮图会把中央大字吃掉 */
+.core__veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(6, 2, 4, .9), rgba(6, 2, 4, .55) 42%, rgba(6, 2, 4, .9));
+}
+
+/* 动效收敛：换挡淡出直接切（不淡） */
+@media (prefers-reduced-motion: reduce) {
+  .core__layer--out {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .core__emblem :deep(svg) {
   width: 100%;
   height: 100%;
@@ -158,7 +290,7 @@ onUnmounted(stopBeat);
 /* ============================ 核心文字层 ============================ */
 /*
  * 中央只有一个「大字槽」：
- *   停放（P 挡）→ 显示 P；骑行（A/E/C/F/X1/X2）→ 显示时速数字（参考图语义）
+ *   停放（P 挡）→ 显示 P；骑行（A/E/C/F）→ 显示时速数字（参考图语义）
  * 六边形左下斜边 = ODO 总里程；右下斜边 = 龙头锁开关（OFF 红 / ON 琥珀）；
  * 六边形内部下方 = 当前骑行挡位铭牌。
  */
