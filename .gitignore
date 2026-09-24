@@ -1,0 +1,18 @@
+# 依赖与产物
+node_modules/
+package-lock.json
+dist/
+*.local
+
+# 打包 / 截图临时文件
+.vite/
+
+# 开发中产生的临时文件（设计走查用的放大图 / ASCII 色块图、无头浏览器 profile）
+tools/_*.log
+tools/_*.html
+tools/_*.mjs
+docs/_*
+
+# 编辑器
+.DS_Store
+Thumbs.db

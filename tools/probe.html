@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PROBE</title>
+<style>html,body{margin:0;background:#000}#stage{border:0;display:block}</style>
+</head>
+<body>
+<!--
+  tools/probe.html — 几何 / 交互探针（给 tools/smoke.js 用，零依赖）
+  ------------------------------------------------------------------
+  思路：把 dist 里的仪表页面装进同源 iframe，量完把结果写进**本页 title**，
+  于是普通的 `chrome --dump-dom` 就能读到这些数字（file:// + --allow-file-access-from-files）：
+
+      file:///…/tools/probe.html?app=?photo=park&wait=1200&sel=.mesh--tl;.plaque
+
+  参数：
+    app    iframe 里的地址（默认 ?photo=park；给 ?nofreeze=1 就是正常上电开机）
+    wait   量之前先等多少毫秒（虚拟时间；默认 1200）
+    sel    要量几何的元素（`;` 分隔）→ rect / transform / clip-path 顶点（% 折算成 px）
+           / --mesh-dy / --boot-rows / overflow-y / 计算底色（bg / bgImg）/ class / 行内 width
+           / position / z-index / opacity / mix-blend-mode / animation-name / mask-image
+           / fill（SVG 图形的实际填充 → 用来验证 :deep() 契约）
+           clip-path 若是 url(#id) → 还会给出 clipId + clipPts（那层 clipPath 里的
+           <polygon> 有几个顶点 → 用来验证「徽记真的被裁成那个六边形」）
+           SVG <image>（环里的徽记）→ svgHref（原始 href）+ par（preserveAspectRatio）
+           bgImg / svgHref 还会被拿去真加载一次 → items[sel].bgHref 和
+           out.imgdims{sel: "宽x高"}（挂了的图是 FAIL / TIMEOUT：用来盯「预留位」
+           里路径写错这种安静故障）
+           （⚠ 虚拟时间下 CSS 过渡不推进，所以「宽度到没到 100%」要看行内 styleW，别看 rect）
+    cnt    要数数量的选择器 → counts{"选择器": n}
+    order  文档顺序断言（`;` 分隔的 "A~B"，`~` = 先 A 后 B）→ orders{"A~B": true/false}
+           （B 画在 A 之后 = B 在上层。例：`order=.b-mark~.b-hex` 验证
+           「六边形描边画在徽记之上」，否则图会糊掉半条描边）
+           ⚠ 分隔符用 `~` 不用 `<`：结果要写进本页 title，而 --dump-dom 会把
+           title 里的 `<` 转义成 `&lt;`，冒烟那边就对不上键了
+    text   要取文本的元素 → texts{"选择器": textContent 前 80 字}
+    click  进页面后依次点击的元素（`;` 分隔，用来验证「操作台按钮真的驱动仪表」）
+    key    要按下的键（`;` 分隔，写 e.key 的小写形式，例 `o` / `escape` / `w`）：
+           在 iframe 的 document 上派发 keydown + keyup —— input.js 监听的就是它，
+           于是「键盘链路」也能被断言（click 只能验证按钮链路）
+           ⚠ 只验证「按下一次」这条链路：keyup 缺失导致的按键卡死（keys[kl] 永久
+           为 true）要用 `keyDown` 复现 —— 它只发 keydown、不发 keyup
+    after  点完之后再等多少毫秒才开始量（默认 500）
+    when      要求「出现」的选择器：轮询等到它出现再量（不依赖挂载耗时，适合量开机自检）
+    whenGone  要求「消失」的选择器：轮询等到它没了再量（例如自检页卸载 = 已进主界面）
+              条件成立后会再等 after 毫秒才量（留时间给 CSS 过渡）
+    timeout   when/whenGone 最多轮询多少毫秒（默认 6000，超时就照常量一次）
+
+    js     在 iframe 里求值一个表达式，结果进 out.js{"表达式": 值}（诊断用）
+           例：js=[EVA_HUD.input.keys,EVA_HUD.panelOpen.value]
+           用来回答「监听到底绑上没有」「状态翻没翻」这种光看 DOM 看不出来的问题
+           ⚠ 表达式之间用 `|` 分隔（`;` 和 `,` 留给表达式自己）
+
+  量到的几何会被 smoke.js 用来断言「斜纹块是平行四边形 / 左右严格镜像 / 与红框等高 /
+  开机自检文本不压进度条 / 操作弹框按钮数与不越界」，text/click 则用来验证交互链路。
+-->
+<iframe id="stage"></iframe>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var app = q.get('app') || '?photo=park';
+  var wait = Number(q.get('wait') || 1200);
+  var after = Number(q.get('after') || 500);
+  var sels = (q.get('sel') || '').split(';').filter(Boolean);
+  var cnts = (q.get('cnt') || '').split(';').filter(Boolean);
+  var orders = (q.get('order') || '').split(';').filter(Boolean);
+  var texts = (q.get('text') || '').split(';').filter(Boolean);
+  var clicks = (q.get('click') || '').split(';').filter(Boolean);
+  var keys = (q.get('key') || '').split(';').filter(Boolean);
+  var keyDowns = (q.get('keyDown') || '').split(';').filter(Boolean);
+  var jss = (q.get('js') || '').split('|').filter(Boolean);
+  var when = q.get('when') || '';
+  var whenGone = q.get('whenGone') || '';
+  var timeout = Number(q.get('timeout') || 6000);
+
+  var f = document.getElementById('stage');
+  f.style.width = '1300px';
+  f.style.height = '760px';
+  f.src = '../dist/index.html' + app;
+
+  /* '76%' → 0.76 × 基准；'120px' → 120 */
+  function num(v, base) {
+    if (/px$/.test(v)) return parseFloat(v);
+    if (/%$/.test(v)) return parseFloat(v) / 100 * base;
+    return NaN;
+  }
+
+  /* clip-path: polygon(...) → 顶点数组（px，相对元素左上角） */
+  function polyOf(cs, r) {
+    var m = /polygon\(([^)]+)\)/.exec(cs.clipPath || '');
+    if (!m) return null;
+    return m[1].split(',').map(function (p) {
+      var xy = p.trim().split(/\s+/);
+      return { x: +num(xy[0], r.width).toFixed(2), y: +num(xy[1], r.height).toFixed(2) };
+    });
+  }
+
+  /* clip-path: url(#id) → id（没有引用就返回 ''） */
+  function clipRef(cs) {
+    var m = /url\(["']?#([^"')]+)["']?\)/.exec(cs.clipPath || '');
+    return m ? m[1] : '';
+  }
+  /* 那层 clipPath 里第一个 polygon 有几个顶点（0 = 没找到） */
+  function clipPts(d, cs) {
+    var id = clipRef(cs);
+    if (!id) return 0;
+    var cp = d.getElementById(id);
+    var pg = cp && cp.querySelector('polygon');
+    return (pg && pg.points) ? pg.points.numberOfItems : 0;
+  }
+  /* 元素标签名（小写） */
+  function tagOf(el) { return String(el.tagName || '').toLowerCase(); }
+
+  function measure() {
+    var out = { url: app, keys: keys.concat(keyDowns), items: {}, counts: {}, texts: {} };
+    try {
+      var d = f.contentDocument;
+      cnts.forEach(function (s) { out.counts[s] = d.querySelectorAll(s).length; });
+      texts.forEach(function (s) {
+        var el = d.querySelector(s);
+        out.texts[s] = el ? String(el.textContent || '').trim().slice(0, 80) : null;
+      });
+      sels.forEach(function (s) {
+        var el = d.querySelector(s);
+        if (!el) { out.items[s] = null; return; }
+        var r = el.getBoundingClientRect();
+        var cs = d.defaultView.getComputedStyle(el);
+        out.items[s] = {
+          x: +r.x.toFixed(2), y: +r.y.toFixed(2),
+          w: +r.width.toFixed(2), h: +r.height.toFixed(2),
+          top: cs.top, transform: cs.transform,
+          dy: (cs.getPropertyValue('--mesh-dy') || '').trim(),
+          rows: (cs.getPropertyValue('--boot-rows') || '').trim(),
+          overflowY: cs.overflowY,
+          /* 计算样式的底色（用来断言「JS 生成的节点真的被 scoped 样式命中」：
+             scoped CSS 漏了 :deep() 时，条子会是全透明 + 零宽度） */
+          bg: cs.backgroundColor,
+          bgImg: String(cs.backgroundImage || '').slice(0, 160),
+          cls: el.getAttribute('class') || '',
+          styleW: el.style.width || '',
+          clip: cs.clipPath,
+          clipId: clipRef(cs),
+          clipPts: clipPts(d, cs),
+          poly: polyOf(cs, r),
+          /* SVG <image>（环里六边形内部的徽记）：原始 href + preserveAspectRatio
+             （前者拿去真加载验「图在不在」，后者验「铺满还是缩进」） */
+          svgHref: tagOf(el) === 'image'
+            ? String(el.getAttribute('href') || el.getAttribute('xlink:href') || '') : '',
+          par: el.getAttribute ? String(el.getAttribute('preserveAspectRatio') || '') : '',
+          /* 立绘（config.boot.art）那套契约要用到的：
+             定位方式 / 层级 / 透明度 / 混合模式 / 动画名 / 羽化遮罩 /
+             SVG 图形的实际 fill（验证 v-html 节点的 :deep() 样式真的命中） */
+          pos: cs.position,
+          zIndex: cs.zIndex,
+          opacity: cs.opacity,
+          blend: cs.mixBlendMode,
+          anim: cs.animationName,
+          animFill: cs.animationFillMode,
+          animDur: cs.animationDuration,
+          left: cs.left,
+          right: cs.right,
+          mask: String(cs.maskImage || cs.webkitMaskImage || '').slice(0, 48),
+          fill: String(cs.fill === undefined ? '' : cs.fill)
+        };
+      });
+      /* 文档顺序断言（order=A<B）：A 在 B 之前 → B 画在上层 */
+      if (orders.length) {
+        out.orders = {};
+        orders.forEach(function (s) {
+          var pair = s.split('~');
+          var ea = d.querySelector(pair[0]), eb = d.querySelector(pair[1]);
+          out.orders[s] = !!(ea && eb && (ea.compareDocumentPosition(eb) & 4));
+        });
+      }
+      /* 在 iframe 里求值（诊断用）：`js=` 允许一个表达式，结果进 out.js
+         —— 例：js=[EVA_HUD.input.keys, EVA_HUD.panelOpen.value]
+         用来回答「监听到底绑上了没有」「状态到底翻没翻」这种光看 DOM 看不出的问题 */
+      if (jss.length) {
+        out.js = {};
+        jss.forEach(function (expr) {
+          try {
+            var val = f.contentWindow.eval(expr);
+            out.js[expr] = (val === undefined) ? 'undefined' : JSON.parse(JSON.stringify(val));
+          } catch (e) { out.js[expr] = 'ERR: ' + e.message; }
+        });
+      }
+    } catch (e) {
+      out.err = String(e);
+    }
+
+    /* 图能不能真的解码：把每个元素的 background-image / SVG <image> 的 href
+       拿去做一次 Image 加载，结果写进 out.imgdims{"选择器": "宽x高"}
+       （失败 TIMEOUT / FAIL）。
+       —— 「预留位」方案里最容易出的岔子就是路径写错：这时元素在、尺寸也在，
+       只是图没了（background-image 不会像 <img> 那样报错），光看几何发现不了。
+       ⚠ 相对 URL 要按 iframe 的 baseURI 解析（CSS 里的路径是相对 dist/index.html 的） */
+    var pending = [];
+    Object.keys(out.items).forEach(function (s) {
+      var it = out.items[s];
+      if (!it) return;
+      var href = '';
+      if (it.svgHref) href = it.svgHref;                  /* SVG <image> */
+      else if (it.bgImg) {                                /* CSS background-image */
+        var m = /url\(["']?([^"')]+)["']?\)/.exec(it.bgImg);
+        if (m) href = m[1];
+      }
+      if (!href) return;
+      try { href = new URL(href, f.contentDocument.baseURI).href; } catch (e) { /* 保持原样 */ }
+      it.bgHref = href;
+      pending.push(s);
+    });
+    if (pending.length) {
+      out.imgdims = {};
+      var left = pending.length;
+      pending.forEach(function (s) {
+        var mine = s, settled = false;
+        var im = new Image();
+        var timer = setTimeout(function () { settle('TIMEOUT'); }, 2000);
+        function settle(v) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          out.imgdims[mine] = v;
+          if (--left === 0) done();
+        }
+        im.onload = function () { settle(im.naturalWidth + 'x' + im.naturalHeight); };
+        im.onerror = function () { settle('FAIL'); };
+        im.src = out.items[mine].bgHref;
+      });
+      return;                                            /* 全部就绪后在 done() 里写 title */
+    }
+    done();
+
+    function done() {
+      document.title = 'PROBE' + JSON.stringify(out) + 'ENDPROBE';
+    }
+  }
+
+  /* 往文档上派发按键（up = true 时连 keyup 一起发）。
+     input.js 监听的就是 document 的 keydown / keyup，所以合成事件就能走完整链路 */
+  function press(doc, list, up) {
+    list.forEach(function (k) {
+      var o = { key: k, bubbles: true, cancelable: true };
+      try {
+        doc.dispatchEvent(new KeyboardEvent('keydown', o));
+        if (up) doc.dispatchEvent(new KeyboardEvent('keyup', o));
+      } catch (e) { /* 忽略 */ }
+    });
+  }
+
+  setTimeout(function () {
+    var d = f.contentDocument;
+    clicks.forEach(function (s) {
+      var el = d.querySelector(s);
+      if (el) el.click();
+    });
+
+    /* 按键统一在「条件就绪、开始量之前」那一刻派发 —— 这样 when/whenGone
+       能把「自检页已经卸载、主循环已启动」等条件等出来，再按 O 才是真实链路 */
+    function tapKeys() {
+      press(f.contentDocument, keys, true);
+      press(f.contentDocument, keyDowns, false);      /* 只按下不松手：复现「按键卡死」 */
+    }
+
+    /* 没有 when/whenGone → 老行为：有 click / key 才等 after 毫秒，否则 0ms 直接量
+       （⚠ 别把「没输入也等 after」当优化：立绘那条「划入方向」断言测的是
+        bootArtIn 的 tx 符号，多等 500ms 就落进 is-hold 的漂移态 → 假 FAIL） */
+    if (!when && !whenGone) {
+      var hadInput = clicks.length || keys.length || keyDowns.length;
+      setTimeout(function () {
+        tapKeys();
+        setTimeout(measure, hadInput ? after : 0);
+      }, 0);
+      return;
+    }
+
+    /* 事件驱动：轮询到条件成立就量（超时也量一次，便于 smoke 报错） */
+    function cond() {
+      var doc = f.contentDocument;
+      if (!doc) return false;
+      if (when && !doc.querySelector(when)) return false;
+      if (whenGone && doc.querySelector(whenGone)) return false;
+      return true;
+    }
+    var t0 = Date.now();
+    (function poll() {
+      if (cond()) {                                  /* 条件成立后留 after 毫秒给过渡动画 */
+        setTimeout(function () { tapKeys(); setTimeout(measure, after); }, 0);
+      } else if (Date.now() - t0 > timeout) measure(); /* 超时也量，便于在 smoke 里报出真实状态 */
+      else setTimeout(poll, 60);
+    })();
+  }, wait);
+})();
+</script>
+</body>
+</html>

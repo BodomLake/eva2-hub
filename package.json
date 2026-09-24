@@ -1,0 +1,41 @@
+{
+  "name": "eva2-hud",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "九号机械师二代 明日香联名款 (EVA-02) 风格电动车智能仪表 HUD — Vue 3 + Vite",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node tools/check.js",
+    "art": "node tools/cutout.js",
+    "smoke": "node tools/smoke.js",
+    "shot": "npm run build && node tools/shot.js --pose=cruise",
+    "shot:park": "npm run build && node tools/shot.js --pose=park",
+    "test": "npm run check && npm run smoke",
+    "predev": "node tools/node-check.js",
+    "prebuild": "node tools/node-check.js"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "vue3",
+    "vite",
+    "hud",
+    "dashboard",
+    "cluster",
+    "ninebot",
+    "evangelion",
+    "svg"
+  ],
+  "license": "MIT"
+}

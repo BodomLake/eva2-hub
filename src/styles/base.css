@@ -1,0 +1,410 @@
+/*!
+ * base.css — 全站唯一的公共样式表
+ * ==================================================================
+ * 分工（v4 起，按 Vue 的惯例）：
+ *   · 本文件 = 设计令牌 + 基础重置 + 舞台/机身外壳 + 屏幕质感 + **共享零件**
+ *     （.ico 图标 / .chipbg 芯片底板 / .mesh 斜纹块 —— 这些被 ≥2 个组件复用，
+ *      所以必须留在公共处）；
+ *   · 每个组件**自己的**样式一律写在组件的 <style scoped> 里：
+ *     TopBar / LeftRail / TimeDial / CoreHex / PowerGauge / BottomBar /
+ *     WarningBanner / HelpPanel / BootOverlay / ControlPanel / App.vue。
+ *   ⚠ 由 JS 或 v-html 注入的 SVG（emblem.js 的 .cf-* / .em-*、gauges.js 的
+ *     .g-*）拿不到 scoped 属性 → 组件里用 :deep() 选，别写回本文件。
+ * ------------------------------------------------------------------
+ * 配色取自「九号机械师二代 明日香联名款」实车仪表：
+ * EVA-02 红为主体，橙色为勾边与高光，琥珀色用于数据读数，
+ * 紫红色只出现在 BATT 等信息框上。
+ */
+
+/* ============================ 设计令牌 ============================ */
+:root {
+  /* 底色 */
+  --bg-page: #05030a;
+  --c-screen: #0a0407;
+  --c-panel: #16080d;
+  --c-panel-2: #240c13;
+  --c-plate: #101820;
+
+  /* 主色 */
+  --c-red: #e2001a;
+  --c-red-2: #ff2d3d;
+  --c-red-3: #8f0b16;
+  --c-orange: #ff7a18;
+  --c-orange-2: #ffab3d;
+  --c-amber: #ffc02e;
+  --c-yellow: #ffd84d;
+
+  /* 功能色 */
+  --c-green: #39d98a;
+  --c-green-2: #7dffb8;
+  --c-purple: #8b5cf6;
+  --c-white: #f2f6fa;
+
+  /* 文字 */
+  --ink: #eaf0f6;
+  --ink-2: #a9b7c2;
+  --ink-3: #5d6a75;
+
+  /* 线条 */
+  --line: #7c1a24;
+  --line-2: #ff5a2a;
+
+  /* 发光 */
+  --glow-red: 0 0 10px rgba(255, 45, 61, .55), 0 0 26px rgba(255, 45, 61, .25);
+  --glow-amber: 0 0 10px rgba(255, 192, 46, .55), 0 0 26px rgba(255, 192, 46, .22);
+  --glow-green: 0 0 10px rgba(57, 217, 138, .6), 0 0 24px rgba(57, 217, 138, .25);
+  --glow-cyan: 0 0 12px rgba(70, 230, 214, .5);
+
+  /* 字体 */
+  --font-ui: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Segoe UI",
+             "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-num: "Bahnschrift", "DIN Alternate", "Oswald", "Roboto Condensed",
+              "Segoe UI", "Arial Narrow", sans-serif;
+
+  /* 舞台基准尺寸（与 src/config.js 的 design 保持一致） */
+  --stage-w: 1280px;
+  --stage-h: 688px;
+
+  /* ---------------------------------------------------------------
+   * 芯片轮廓（全部用 clip-path；圆角靠 border-radius 保留）
+   *   四个角落的「不规则五边形」互为镜像：45° 切角一律朝向屏幕中心，
+   *   圆角留在屏幕外角 —— 所以四块芯片天然对称（参考图画法）。
+   *     --penta-tl  左上芯片：外圆角左上 + 切角右下（时钟/天气）
+   *     --penta-tr  右上芯片：外圆角右上 + 切角左下（挡位徽标）
+   *     --penta-bl  左下芯片：外圆角左下 + 切角右上（信号芯片组）
+   *     --penta-br  右下芯片：外圆角右下 + 切角左上（NOS 氮气条）
+   *   --hex 平顶六边形：上/下两条边平行于屏幕横向 ——
+   *        中央核心与左侧功能灯塔共用同一套比例。
+   * 说明：clip-path 会连 border 一起裁掉，所以描边用「外层 + 内层
+   * 两层同形状」实现（见 components.css 的 .chipbg / .chipbg::after）。
+   * ------------------------------------------------------------- */
+  --chip-r: 13px;                 /* 外角圆角半径 */
+  --chip-cut: 26px;               /* 45° 切角边长（四块芯片一致） */
+  --penta-tl: polygon(0 0, 100% 0, 100% calc(100% - var(--chip-cut)),
+                      calc(100% - var(--chip-cut)) 100%, 0 100%);
+  --penta-tr: polygon(0 0, 100% 0, 100% 100%, var(--chip-cut) 100%,
+                      0 calc(100% - var(--chip-cut)));
+  --penta-bl: polygon(0 0, calc(100% - var(--chip-cut)) 0, 100% var(--chip-cut),
+                      100% 100%, 0 100%);
+  --penta-br: polygon(var(--chip-cut) 0, 100% 0, 100% 100%, 0 100%,
+                      0 var(--chip-cut));
+  --hex: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  /* 平顶六边形的两个「角」比例，emblem.js 的 buildFrame() 复用同一组数字 */
+  --hex-w: 470px;
+  --hex-h: 440px;
+
+  /* ---------------------------------------------------------------
+   * 灰黑斜纹平行四边形（.mesh，共 4 块：READY 两侧 + 电量条两侧）
+   * 尺寸与形状只由这三个令牌决定，改一处四处同步：
+   *   --mesh-w   宽 132
+   *   --mesh-h   高 40 —— **与 .battgauge::before 那条红色梯形框等高**
+   *              （.battgauge 自己也用 --mesh-h 定高 → 两者永远一样高）
+   *   --mesh-sk  斜切量（占宽百分比）：上下边水平等长、左右斜边同斜率，
+   *              所以每一块都是「真平行四边形」，不是梯形
+   * 一对左右互为镜像（位置左右对称、上下错位取相反数）：
+   *   ╲（右下斜）→ --mesh-slash-r  用于 --tl / --br
+   *   ╱（左下斜）→ --mesh-slash    用于 --tr / --bl
+   *   —— 顶栏一对在参考照片里就是 ╲ READY ╱（向铭牌内侧倾），
+   *      底栏一对的斜边正好顺着红梯形框的左右斜边往外延续。
+   * ------------------------------------------------------------- */
+  --mesh-w: 132px;
+  --mesh-h: 40px;
+  --mesh-sk: 24%;
+  --mesh-slash: polygon(var(--mesh-sk) 0, 100% 0,
+                       calc(100% - var(--mesh-sk)) 100%, 0 100%);
+  --mesh-slash-r: polygon(0 0, calc(100% - var(--mesh-sk)) 0,
+                          100% 100%, var(--mesh-sk) 100%);
+}
+
+/* ============================ 基础重置 ============================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: radial-gradient(120% 90% at 50% 38%, #17060d 0%, #0a0308 52%, #030103 100%);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+b, strong { font-weight: 700; }
+i, em { font-style: normal; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+/* 说明：数字读数统一用「等宽数字 + 数字字体」，避免逐帧抖动 ——
+   这条规则现在由**各个组件自己的 scoped 样式**声明
+   （见各 .vue 里的 font-variant-numeric: tabular-nums），
+   公共表不再写一份「跨组件的类名清单」去伸手进组件内部。 */
+
+/* ============================ 缩放舞台 ============================ */
+.viewport {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* 整个 HUD 在 1280×688 的坐标系里布局，由 main.js 等比缩放到窗口 */
+.stage {
+  position: relative;
+  width: var(--stage-w);
+  height: var(--stage-h);
+  transform-origin: 50% 50%;
+  will-change: transform;
+  filter: drop-shadow(0 30px 80px rgba(226, 0, 26, .16));
+}
+
+/* ============================ 红色机身外壳 ============================ */
+.bezel {
+  position: absolute;
+  inset: 0;
+  border-radius: 30px;
+  padding: 15px;
+  background:
+    linear-gradient(158deg, #b2101c 0%, #e01824 12%, #8d0d17 34%,
+                    #4e070c 55%, #b8121e 78%, #7a0a12 100%);
+  box-shadow:
+    inset 0 0 0 2px #390409,
+    inset 0 2px 0 rgba(255, 170, 170, .35),
+    inset 0 -3px 10px rgba(0, 0, 0, .6),
+    0 0 0 1px #210305,
+    0 0 42px rgba(226, 0, 26, .26);
+}
+
+/* 四角螺栓装饰 */
+.bezel__bolts {
+  position: absolute;
+  inset: 0;
+  border-radius: 30px;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 26px 26px, #f0a9a9 0 1.6px, #5c0a10 1.6px 5px, transparent 5px),
+    radial-gradient(circle at calc(100% - 26px) 26px, #f0a9a9 0 1.6px, #5c0a10 1.6px 5px, transparent 5px),
+    radial-gradient(circle at 26px calc(100% - 26px), #f0a9a9 0 1.6px, #5c0a10 1.6px 5px, transparent 5px),
+    radial-gradient(circle at calc(100% - 26px) calc(100% - 26px), #f0a9a9 0 1.6px, #5c0a10 1.6px 5px, transparent 5px);
+}
+
+/* ============================ 屏幕 ============================ */
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 17px;
+  overflow: hidden;
+  background: radial-gradient(78% 62% at 50% 44%, #1d060c 0%, #0d0307 58%, #050103 100%);
+  box-shadow:
+    inset 0 0 0 2px #23050a,
+    inset 0 0 60px rgba(0, 0, 0, .9),
+    inset 0 0 0 3px rgba(255, 90, 42, .12);
+}
+
+/* ============================ 侧边氛围灯带 ============================ */
+/* 参考图里这两条黄灯条又粗又长，但上下 / 左右都留了一大截距离（不贴边） */
+.strip {
+  position: absolute;
+  top: 34px;
+  bottom: 34px;
+  width: 16px;
+  border-radius: 9px;
+  background: linear-gradient(180deg,
+      rgba(255, 168, 0, .12) 0%, #ffc02e 14%, #ffe58a 42%,
+      #ffc02e 68%, rgba(255, 168, 0, .12) 100%);
+  box-shadow: 0 0 16px rgba(255, 192, 46, .6), 0 0 42px rgba(255, 140, 0, .34);
+  animation: stripBreath 3.6s ease-in-out infinite;
+}
+.strip--l { left: 22px; }
+.strip--r { right: 22px; animation-delay: -1.8s; }
+
+@keyframes stripBreath {
+  0%, 100% { opacity: .82; filter: brightness(1); }
+  50%      { opacity: 1;   filter: brightness(1.22); }
+}
+
+/* ============================ 屏幕质感层 ============================ */
+.fx { position: absolute; inset: 0; pointer-events: none; }
+
+/* 淡淡的六边形网格 */
+.fx--grid {
+  opacity: .04;
+  background-size: 46px 80px;
+  background-image:
+    linear-gradient(120deg, transparent 47%, var(--c-red-2) 47%, var(--c-red-2) 53%, transparent 53%),
+    linear-gradient(60deg, transparent 47%, var(--c-red-2) 47%, var(--c-red-2) 53%, transparent 53%);
+}
+
+/* 扫描线 */
+.fx--scan {
+  opacity: .15;
+  background: repeating-linear-gradient(
+    180deg, rgba(0, 0, 0, .9) 0 1px, rgba(255, 255, 255, .03) 1px 3px);
+}
+
+/* 四角暗角 + 顶部玻璃反光 */
+.fx--vig {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .05) 0%, transparent 22%),
+    radial-gradient(130% 108% at 50% 46%, transparent 58%, rgba(0, 0, 0, .62) 100%);
+}
+
+/* ============================ 通用动效 ============================ */
+@keyframes blinkHard {
+  0%, 44%   { opacity: 1; }
+  45%, 100% { opacity: .12; }
+}
+@keyframes pulseGlow {
+  0%, 100% { opacity: .55; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip { animation: none; }
+}
+
+/* ==================================================================
+ * 共享零件（被 ≥2 个组件复用，所以放在公共表里）
+ * ================================================================== */
+
+/* ============================ 图标 ============================ */
+.ico {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+.ico--fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+
+/* ============================ 芯片底板（左上/右上/左下/右下/灯塔共用） ============================ */
+/*
+ * clip-path 会把 border 一起裁掉，所以描边用「两层同形状图层」实现：
+ * .chipbg 是外层（描边色），.chipbg::after 是内层（面板色），
+ * 内层 inset 1.6px 后露出的那一圈就是轮廓线。
+ *
+ * 轮廓五种（定义在 base.css 的 :root）：
+ *   .chip--tl  左上芯片：圆角左上 + 右下切角（天气时间）
+ *   .chip--tr  右上芯片：圆角右上 + 左下切角（挡位徽标）
+ *   .chip--bl  左下芯片：圆角左下 + 右上切角（信号芯片组）
+ *   .chip--br  右下芯片：圆角右下 + 左上切角（NOS 氮气条）
+ *   .chip--hex 平顶六边形（左侧功能灯塔）
+ * 四块角落芯片的切角一律朝屏幕中心、圆角朝屏幕外角 —— 互为镜像。
+ * 圆角靠 border-radius 保留：clip-path 与圆角是「交集」，圆角不会被切掉。
+ */
+.chip--tl {
+  --chipshape: var(--penta-tl);
+  --chipradius: var(--chip-r) 0 0 0;
+}
+
+.chip--tr {
+  --chipshape: var(--penta-tr);
+  --chipradius: 0 var(--chip-r) 0 0;
+}
+
+.chip--bl {
+  --chipshape: var(--penta-bl);
+  --chipradius: 0 0 0 var(--chip-r);
+}
+
+.chip--br {
+  --chipshape: var(--penta-br);
+  --chipradius: 0 0 var(--chip-r) 0;
+}
+
+.chip--hex {
+  --chipshape: var(--hex);
+  --chipradius: 0;
+}
+
+.chipbg {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--chipshape);
+  border-radius: var(--chipradius, 0);
+  background: linear-gradient(180deg,
+      rgba(255, 170, 130, .78) 0%, rgba(226, 0, 26, .52) 52%, rgba(150, 22, 32, .58) 100%);
+  transition: background .22s;
+}
+
+.chipbg::after {
+  content: "";
+  position: absolute;
+  inset: 1.6px;
+  clip-path: inherit;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(30, 12, 16, .95), rgba(9, 4, 6, .96));
+  transition: background .22s;
+}
+
+/* 琥珀描边（左上天气时间 / 右上挡位徽标这类「常亮信息」芯片） */
+.chipbg--amber {
+  background: linear-gradient(180deg, #ffd9a0 0%, #ff9a2e 52%, #b8471a 100%);
+}
+
+.chipbg--amber::after {
+  background: linear-gradient(180deg, rgba(40, 18, 4, .95), rgba(14, 6, 2, .96));
+}
+
+/* 紫色描边（右下角 NOS 氮气条 —— 参考图里唯一的紫红信息框） */
+.chipbg--purple {
+  background: linear-gradient(180deg, #d8bcff 0%, var(--c-purple) 52%, #5b21b6 100%);
+}
+
+.chipbg--purple::after {
+  background: linear-gradient(180deg, rgba(30, 8, 46, .95), rgba(10, 2, 20, .96));
+}
+
+
+/* ============================================================================
+ * 灰黑斜纹平行四边形（共享零件：READY 两侧 2 块 + 电量条两侧 2 块）
+ * ----------------------------------------------------------------------------
+ * 放在 base.css 是因为它被 TopBar.vue 与 BottomBar.vue 共用；
+ * 几何契约（要改尺寸 / 角度只改本文件的 --mesh-w / --mesh-h / --mesh-sk）：
+ *   1. 四块同尺寸：var(--mesh-w) × var(--mesh-h)，且 --mesh-h 就是
+ *      .battgauge::before 那条红色梯形框的高度 → 装饰块与框「永远等高」；
+ *   2. 每块自己都是**真平行四边形**：上下边水平且等长、左右斜边斜率相同
+ *      （--mesh-slash / --mesh-slash-r 是一对镜像多边形，别手写百分比）；
+ *   3. 一对左右「严格镜像」：位置左右对称 + 垂直中线用同一个 top:50%，
+ *      --mesh-dy 默认 0 = 两块压在同一条水平线上（最对称）。
+ * 位置（left/right、--mesh-dy）由各自的容器给出：
+ *   顶栏 → TopBar.vue 的 .topbar__c；底栏 → BottomBar.vue 的 .battgauge。
+ * ========================================================================== */
+.mesh {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  width: var(--mesh-w);
+  height: var(--mesh-h);
+
+  /* 相对容器中线的错位：一对里一个 +、一个 −（取相反数 → 镜像对称） */
+  --mesh-dy: 0px;
+  transform: translateY(calc(-50% + var(--mesh-dy)));
+
+  background:
+    repeating-linear-gradient(58deg, rgba(255, 255, 255, .38) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(-58deg, rgba(255, 255, 255, .2) 0 1px, transparent 1px 6px),
+    linear-gradient(180deg, #929ea8 0%, #46505a 62%, #171c21 100%);
+  opacity: .5;
+  pointer-events: none;
+}
+
+/* ╲ 右下斜：顶栏左块 + 底栏右块（互为对角，形状完全一致） */
+.mesh--tl,
+.mesh--br { clip-path: var(--mesh-slash-r); }
+
+/* ╱ 左下斜：顶栏右块 + 底栏左块 = 上面那块的镜像 */
+.mesh--tr,
+.mesh--bl { clip-path: var(--mesh-slash); }
+
